@@ -1,0 +1,31 @@
+### 1. 添加红军单位 (坦克)
+POST http://localhost:8080/combat/add
+Content-Type: application/json
+
+{
+  "name": "红军-T99主战坦克营",
+  "side": "RED",
+  "type": "TANK",
+  "combatPower": 100,
+  "location": "A区-高地",
+  "status": "ACTIVE"
+}
+
+### 2. 添加蓝军单位 (步兵)
+POST http://localhost:8080/combat/add
+Content-Type: application/json
+
+{
+  "name": "蓝军-机械化步兵连",
+  "side": "BLUE",
+  "type": "INFANTRY",
+  "combatPower": 80,
+  "location": "B区-平原",
+  "status": "ACTIVE"
+}
+
+### 3. 查看当前所有兵力
+GET http://localhost:8080/combat/list
+
+### 4. 开始一次战斗模拟
+POST http://localhost:8080/combat/start

@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.Map;
 
 public class Campaign {
-    /** 稳定标识：预设战役为固定字符串（如 huaihai）；自定义战役在保存想定或 POST /campaign/custom 时由服务端补全 UUID */
+    /** 稳定标识：自定义战役在保存想定或 POST /campaign/custom 时由服务端补全 UUID */
     private String id;
     private String name; // 战役名称
     private String description; // 战役描述

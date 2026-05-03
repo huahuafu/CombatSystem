@@ -180,7 +180,7 @@ export default function CampaignCenterPage() {
   };
 
   return (
-    <div className="container" style={{ padding: 16, maxWidth: 1200, margin: "0 auto" }}>
+    <div className="page-container">
       <Typography.Title level={4} style={{ marginTop: 0, color: "#e7edf7" }}>
         战役中心
       </Typography.Title>
@@ -193,35 +193,10 @@ export default function CampaignCenterPage() {
         style={{ marginBottom: 14 }}
       />
 
-      <Card title="预设战役加载/挂载" size="small" style={{ marginBottom: 14 }}>
-        <Space wrap>
-          <Button
-            type="primary"
-            loading={actionLoading && actionLabel === "加载淮海战役"}
-            onClick={() => post("/combat/campaign/load/huaihai", {}, "加载淮海战役")}
-          >
-            加载：淮海战役
-          </Button>
-          <Button
-            type="primary"
-            loading={actionLoading && actionLabel === "加载抗美援朝"}
-            onClick={() => post("/combat/campaign/load/korean", {}, "加载抗美援朝")}
-          >
-            加载：抗美援朝
-          </Button>
-          <Button
-            loading={actionLoading && actionLabel === "挂载淮海战役"}
-            onClick={() => post("/combat/campaign/attach/huaihai", {}, "挂载淮海战役")}
-          >
-            挂载：淮海到当前想定
-          </Button>
-          <Button
-            loading={actionLoading && actionLabel === "挂载抗美援朝"}
-            onClick={() => post("/combat/campaign/attach/korean", {}, "挂载抗美援朝")}
-          >
-            挂载：抗美援朝到当前想定
-          </Button>
-        </Space>
+      <Card title="战役会话操作" size="small" style={{ marginBottom: 14 }}>
+        <Typography.Text type="secondary">
+          预设战役入口已下线，请使用下方“自定义战役”写入当前会话。
+        </Typography.Text>
         {(actionLoading || actionProgress === 100) && (
           <div style={{ marginTop: 12 }}>
             <Progress percent={actionProgress} size="small" status={actionLoading ? "active" : "success"} />

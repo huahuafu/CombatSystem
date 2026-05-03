@@ -1,10 +1,16 @@
 import React from "react";
+import { Tag } from "antd";
 import { num, pct } from "../lib/api";
 
-export default function PlanCard({ plan, meta, selected, onSelect }) {
+export default function PlanCard({ plan, meta, selected, onSelect, recommended }) {
   const invalid = plan?.invalidReason;
   return (
-    <article className={`x-plan ${selected ? "selected" : ""}`}>
+    <article className={`x-plan ${selected ? "selected" : ""}`} style={{ position: "relative" }}>
+      {recommended ? (
+        <Tag color="gold" style={{ position: "absolute", top: 8, right: 8, zIndex: 1, margin: 0 }}>
+          推荐方案
+        </Tag>
+      ) : null}
       <span className={`x-badge ${meta.cls}`}>{meta.title}</span>
       <div className="kv"><span>战术名</span><strong>{plan?.strategyName || "待生成"}</strong></div>
       <div className="kv"><span>预计胜率</span><strong>{plan ? pct(plan.projectedWinRate) : "--"}</strong></div>

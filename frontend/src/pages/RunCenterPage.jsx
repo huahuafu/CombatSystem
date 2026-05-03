@@ -179,7 +179,7 @@ export default function RunCenterPage() {
   ];
 
   return (
-    <div className="container" style={{ padding: 16, maxWidth: 1400, margin: "0 auto" }}>
+    <div className="page-container">
       <Typography.Title level={4} style={{ marginTop: 0, color: "#e7edf7" }}>
         运行回放中心
       </Typography.Title>

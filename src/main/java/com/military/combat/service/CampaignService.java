@@ -1,6 +1,5 @@
 package com.military.combat.service;
 
-import com.military.combat.campaign.demo.CampaignDemoData;
 import com.military.combat.entity.Campaign;
 import com.military.combat.entity.CampaignEvent;
 import com.military.combat.entity.CampaignObjective;
@@ -17,15 +16,12 @@ import java.util.UUID;
 
 /**
  * 战役会话状态与推演中的阶段/目标/事件检查 —— <strong>主线第一层：自定义战役</strong>（阶段、战役目标与关键事件）。
- * 历史演示数据见 {@link com.military.combat.campaign.demo.CampaignDemoData}；正式使用以想定内嵌战役或 {@code applyCampaignToSession} 为准。
+ * 正式使用以想定内嵌战役或 {@code applyCampaignToSession} 为准。
  */
 @Service
 public class CampaignService {
     private Campaign currentCampaign;
     private int currentPhase;
-
-    @Autowired
-    private CombatUnitService unitService;
 
     /**
      * 为战役及下属目标/事件补全稳定 ID（自定义战役与想定保存时必调）。
@@ -78,24 +74,6 @@ public class CampaignService {
     }
 
     /**
-     * 仅将淮海战役配置挂到当前会话（不创建/清空作战单位），供想定「管理」与服务器战役阶段联动。
-     */
-    public Campaign attachHuaiHaiCampaign() {
-        Campaign campaign = CampaignDemoData.huaiHaiCampaign();
-        this.currentCampaign = campaign;
-        this.currentPhase = 0;
-        return campaign;
-    }
-
-    public Campaign loadHuaiHaiCampaign() {
-        Campaign campaign = CampaignDemoData.huaiHaiCampaign();
-        this.currentCampaign = campaign;
-        this.currentPhase = 0;
-        createHuaiHaiUnits();
-        return campaign;
-    }
-    
-    /**
      * 获取当前战役
      */
     public Campaign getCurrentCampaign() {
@@ -116,79 +94,6 @@ public class CampaignService {
         this.currentPhase = phase;
     }
     
-    /**
-     * 淮海战役兵力模板（不落库），用于想定内嵌填充等。
-     */
-    public List<CombatUnit> buildHuaiHaiEmbeddedUnits() {
-        List<CombatUnit> out = new ArrayList<>();
-        out.add(createUnit("华东野战军第1纵队", "RED", "MECH_INFANTRY", 80, 20000, 2.0, 34.3, 117.5));
-        out.add(createUnit("华东野战军第2纵队", "RED", "MECH_INFANTRY", 80, 20000, 2.0, 34.25, 117.6));
-        out.add(createUnit("华东野战军第3纵队", "RED", "MECH_INFANTRY", 80, 20000, 2.0, 34.2, 117.4));
-        out.add(createUnit("华东野战军第4纵队", "RED", "MECH_INFANTRY", 80, 20000, 2.0, 34.15, 117.3));
-        out.add(createUnit("华东野战军第6纵队", "RED", "MECH_INFANTRY", 80, 20000, 2.0, 34.1, 117.2));
-        out.add(createUnit("华东野战军第7纵队", "RED", "INFANTRY", 60, 15000, 1.5, 34.05, 117.1));
-        out.add(createUnit("华东野战军第8纵队", "RED", "INFANTRY", 60, 15000, 1.5, 34.0, 117.0));
-        out.add(createUnit("华东野战军第9纵队", "RED", "INFANTRY", 60, 15000, 1.5, 33.95, 117.15));
-        out.add(createUnit("华东野战军第10纵队", "RED", "INFANTRY", 60, 15000, 1.5, 33.9, 117.25));
-        out.add(createUnit("华东野战军第11纵队", "RED", "INFANTRY", 60, 15000, 1.5, 34.35, 117.45));
-        out.add(createUnit("华东野战军第12纵队", "RED", "INFANTRY", 60, 15000, 1.5, 34.4, 117.55));
-        out.add(createUnit("华东野战军特种兵纵队", "RED", "ARTILLERY", 90, 50000, 0.8, 34.2, 117.2));
-        out.add(createUnit("中原野战军第1纵队", "RED", "MECH_INFANTRY", 80, 20000, 2.0, 33.8, 116.8));
-        out.add(createUnit("中原野战军第2纵队", "RED", "MECH_INFANTRY", 80, 20000, 2.0, 33.75, 116.9));
-        out.add(createUnit("中原野战军第3纵队", "RED", "MECH_INFANTRY", 80, 20000, 2.0, 33.7, 117.0));
-        out.add(createUnit("中原野战军第4纵队", "RED", "MECH_INFANTRY", 80, 20000, 2.0, 33.65, 117.1));
-        out.add(createUnit("中原野战军第6纵队", "RED", "MECH_INFANTRY", 80, 20000, 2.0, 33.6, 117.2));
-        out.add(createUnit("中原野战军第9纵队", "RED", "INFANTRY", 60, 15000, 1.5, 33.55, 117.3));
-        out.add(createUnit("中原野战军第11纵队", "RED", "INFANTRY", 60, 15000, 1.5, 33.5, 117.4));
-        out.add(createUnit("中原野战军特种兵纵队", "RED", "ARTILLERY", 90, 50000, 0.8, 33.7, 116.9));
-        out.add(createUnit("黄百韬兵团第25军", "BLUE", "MECH_INFANTRY", 70, 18000, 1.8, 34.4, 117.8));
-        out.add(createUnit("黄百韬兵团第44军", "BLUE", "MECH_INFANTRY", 70, 18000, 1.8, 34.35, 117.85));
-        out.add(createUnit("黄百韬兵团第63军", "BLUE", "MECH_INFANTRY", 70, 18000, 1.8, 34.45, 117.75));
-        out.add(createUnit("黄百韬兵团第64军", "BLUE", "MECH_INFANTRY", 70, 18000, 1.8, 34.5, 117.7));
-        out.add(createUnit("黄百韬兵团第100军", "BLUE", "MECH_INFANTRY", 70, 18000, 1.8, 34.55, 117.65));
-        out.add(createUnit("黄维兵团第10军", "BLUE", "MECH_INFANTRY", 70, 18000, 1.8, 33.9, 116.5));
-        out.add(createUnit("黄维兵团第14军", "BLUE", "MECH_INFANTRY", 70, 18000, 1.8, 33.85, 116.55));
-        out.add(createUnit("黄维兵团第18军", "BLUE", "MECH_INFANTRY", 70, 18000, 1.8, 33.8, 116.6));
-        out.add(createUnit("黄维兵团第85军", "BLUE", "MECH_INFANTRY", 70, 18000, 1.8, 33.75, 116.65));
-        out.add(createUnit("杜聿明集团第2兵团", "BLUE", "MECH_INFANTRY", 70, 18000, 1.8, 34.1, 116.5));
-        out.add(createUnit("杜聿明集团第13兵团", "BLUE", "MECH_INFANTRY", 70, 18000, 1.8, 34.05, 116.45));
-        out.add(createUnit("杜聿明集团第16兵团", "BLUE", "MECH_INFANTRY", 70, 18000, 1.8, 34.0, 116.4));
-        out.add(createUnit("徐州守备部队", "BLUE", "INFANTRY", 50, 12000, 1.2, 34.26, 117.18));
-        out.add(createUnit("徐州装甲部队", "BLUE", "TANK", 120, 30000, 1.2, 34.27, 117.19));
-        return out;
-    }
-
-    /**
-     * 创建淮海战役的初始作战单位（写入 Mongo，并清空旧单位）
-     */
-    private void createHuaiHaiUnits() {
-        List<CombatUnit> existingUnits = unitService.getAllUnits();
-        for (CombatUnit unit : existingUnits) {
-            unitService.deleteUnit(unit.getId());
-        }
-        for (CombatUnit u : buildHuaiHaiEmbeddedUnits()) {
-            unitService.addUnit(u);
-        }
-    }
-    
-    /**
-     * 创建作战单位
-     */
-    private CombatUnit createUnit(String name, String side, String type, int hp, int range, double speed, double lat, double lng) {
-        CombatUnit unit = new CombatUnit();
-        unit.setName(name);
-        unit.setSide(side);
-        unit.setType(type);
-        unit.setCombatPower(hp);
-        unit.setMaxPower(hp);
-        unit.setAttackRange(range);
-        unit.setSpeed(speed);
-        unit.setLatitude(lat);
-        unit.setLongitude(lng);
-        unit.setStatus("ACTIVE");
-        return unit;
-    }
-
     public void advancePhase() {
         if (currentCampaign != null && currentPhase < currentCampaign.getPhases().size() - 1) {
             currentPhase++;
@@ -234,10 +139,10 @@ public class CampaignService {
      * 条件表达式（去硬编码）：
      * - SIDE_ALIVE_LE:BLUE:3
      * - SIDE_ALIVE_GE:RED:5
-     * - UNIT_HP_BELOW:name:黄百韬:50
+     * - UNIT_HP_BELOW:name:某部队:50
      * - UNIT_HP_BELOW:id:unit-1:60
-     * - UNIT_EXISTS:name:志愿军
-     * - UNIT_ELIMINATED:name:杜聿明
+     * - UNIT_EXISTS:name:某部队
+     * - UNIT_ELIMINATED:name:某部队
      * - UNIT_IN_AREA:BLUE:38.0:38.8:127.0:128.0
      */
     private boolean evaluateConditionExpression(String expr, List<CombatUnit> units) {
@@ -524,86 +429,4 @@ public class CampaignService {
         return phaseEvents;
     }
 
-    public Campaign attachKoreanWar() {
-        Campaign campaign = CampaignDemoData.koreanWarCampaign();
-        this.currentCampaign = campaign;
-        this.currentPhase = 0;
-        return campaign;
-    }
-
-    public Campaign loadKoreanWar() {
-        Campaign campaign = CampaignDemoData.koreanWarCampaign();
-        this.currentCampaign = campaign;
-        this.currentPhase = 0;
-        createKoreanWarUnits();
-        return campaign;
-    }
-    
-    /**
-     * 创建抗美援朝战争的初始作战单位
-     */
-    private void createKoreanWarUnits() {
-        // 清除现有单位
-        List<CombatUnit> existingUnits = unitService.getAllUnits();
-        for (CombatUnit unit : existingUnits) {
-            unitService.deleteUnit(unit.getId());
-        }
-        
-        // 红方单位 - 中国人民志愿军
-        // 第13兵团
-        unitService.addUnit(createUnit("志愿军第38军", "RED", "MECH_INFANTRY", 85, 22000, 2.2, 39.5, 125.5));
-        unitService.addUnit(createUnit("志愿军第39军", "RED", "MECH_INFANTRY", 85, 22000, 2.2, 39.4, 125.6));
-        unitService.addUnit(createUnit("志愿军第40军", "RED", "MECH_INFANTRY", 85, 22000, 2.2, 39.3, 125.7));
-        unitService.addUnit(createUnit("志愿军第42军", "RED", "MECH_INFANTRY", 85, 22000, 2.2, 39.2, 125.8));
-        unitService.addUnit(createUnit("志愿军第50军", "RED", "MECH_INFANTRY", 85, 22000, 2.2, 39.1, 125.9));
-        unitService.addUnit(createUnit("志愿军第66军", "RED", "MECH_INFANTRY", 85, 22000, 2.2, 39.0, 126.0));
-        
-        // 第9兵团
-        unitService.addUnit(createUnit("志愿军第20军", "RED", "MECH_INFANTRY", 85, 22000, 2.2, 38.9, 125.4));
-        unitService.addUnit(createUnit("志愿军第26军", "RED", "MECH_INFANTRY", 85, 22000, 2.2, 38.8, 125.5));
-        unitService.addUnit(createUnit("志愿军第27军", "RED", "MECH_INFANTRY", 85, 22000, 2.2, 38.7, 125.6));
-        
-        // 第3兵团
-        unitService.addUnit(createUnit("志愿军第12军", "RED", "MECH_INFANTRY", 85, 22000, 2.2, 38.6, 125.7));
-        unitService.addUnit(createUnit("志愿军第15军", "RED", "MECH_INFANTRY", 85, 22000, 2.2, 38.5, 125.8));
-        unitService.addUnit(createUnit("志愿军第60军", "RED", "MECH_INFANTRY", 85, 22000, 2.2, 38.4, 125.9));
-        
-        // 第19兵团
-        unitService.addUnit(createUnit("志愿军第63军", "RED", "MECH_INFANTRY", 85, 22000, 2.2, 38.3, 126.0));
-        unitService.addUnit(createUnit("志愿军第64军", "RED", "MECH_INFANTRY", 85, 22000, 2.2, 38.2, 126.1));
-        unitService.addUnit(createUnit("志愿军第65军", "RED", "MECH_INFANTRY", 85, 22000, 2.2, 38.1, 126.2));
-        
-        // 炮兵部队
-        unitService.addUnit(createUnit("志愿军炮兵第1师", "RED", "ARTILLERY", 95, 55000, 0.9, 39.3, 125.5));
-        unitService.addUnit(createUnit("志愿军炮兵第2师", "RED", "ARTILLERY", 95, 55000, 0.9, 39.2, 125.6));
-        unitService.addUnit(createUnit("志愿军火箭炮第21师", "RED", "ROCKET_ARTILLERY", 90, 65000, 0.8, 39.1, 125.7));
-        unitService.addUnit(createUnit("志愿军高射炮兵", "RED", "AA_GUN", 80, 48000, 1.1, 39.0, 125.8));
-        
-        // 蓝方单位 - 联合国军
-        // 美军第8集团军
-        unitService.addUnit(createUnit("美军第1骑兵师", "BLUE", "MECH_INFANTRY", 75, 20000, 2.0, 39.6, 125.3));
-        unitService.addUnit(createUnit("美军第2步兵师", "BLUE", "MECH_INFANTRY", 75, 20000, 2.0, 39.5, 125.4));
-        unitService.addUnit(createUnit("美军第7步兵师", "BLUE", "MECH_INFANTRY", 75, 20000, 2.0, 39.4, 125.3));
-        unitService.addUnit(createUnit("美军第24步兵师", "BLUE", "MECH_INFANTRY", 75, 20000, 2.0, 39.3, 125.4));
-        unitService.addUnit(createUnit("美军第25步兵师", "BLUE", "MECH_INFANTRY", 75, 20000, 2.0, 39.2, 125.3));
-        
-        // 美军陆战第1师
-        unitService.addUnit(createUnit("美军陆战第1师", "BLUE", "MECH_INFANTRY", 80, 22000, 2.1, 39.1, 125.2));
-        
-        // 英军
-        unitService.addUnit(createUnit("英军第27旅", "BLUE", "MECH_INFANTRY", 70, 19000, 1.9, 39.0, 125.1));
-        unitService.addUnit(createUnit("英军第29旅", "BLUE", "MECH_INFANTRY", 70, 19000, 1.9, 38.9, 125.0));
-        
-        // 韩军
-        unitService.addUnit(createUnit("韩军第1师", "BLUE", "INFANTRY", 55, 14000, 1.4, 38.8, 124.9));
-        unitService.addUnit(createUnit("韩军第2师", "BLUE", "INFANTRY", 55, 14000, 1.4, 38.7, 124.8));
-        unitService.addUnit(createUnit("韩军第3师", "BLUE", "INFANTRY", 55, 14000, 1.4, 38.6, 124.7));
-        unitService.addUnit(createUnit("韩军第5师", "BLUE", "INFANTRY", 55, 14000, 1.4, 38.5, 124.6));
-        unitService.addUnit(createUnit("韩军第6师", "BLUE", "INFANTRY", 55, 14000, 1.4, 38.4, 124.5));
-        unitService.addUnit(createUnit("韩军第7师", "BLUE", "INFANTRY", 55, 14000, 1.4, 38.3, 124.4));
-        unitService.addUnit(createUnit("韩军第8师", "BLUE", "INFANTRY", 55, 14000, 1.4, 38.2, 124.3));
-        
-        // 美军坦克部队
-        unitService.addUnit(createUnit("美军坦克第73营", "BLUE", "TANK", 110, 28000, 1.1, 39.4, 125.2));
-    }
 }

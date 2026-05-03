@@ -737,27 +737,6 @@ public class CombatController {
     }
 
     // --- 战役管理API ---
-    @PostMapping("/campaign/load/huaihai")
-    public Campaign loadHuaiHaiCampaign() {
-        return campaignService.loadHuaiHaiCampaign();
-    }
-
-    @PostMapping("/campaign/load/korean")
-    public Campaign loadKoreanWar() {
-        return campaignService.loadKoreanWar();
-    }
-
-    /** 仅关联淮海战役配置到当前会话，不重建单位（用于已保存战役想定的「管理」） */
-    @PostMapping("/campaign/attach/huaihai")
-    public Campaign attachHuaiHaiCampaign() {
-        return campaignService.attachHuaiHaiCampaign();
-    }
-
-    /** 仅关联抗美援朝战役配置到当前会话，不重建单位 */
-    @PostMapping("/campaign/attach/korean")
-    public Campaign attachKoreanWar() {
-        return campaignService.attachKoreanWar();
-    }
 
     @GetMapping("/campaign/current")
     public Campaign getCurrentCampaign() {

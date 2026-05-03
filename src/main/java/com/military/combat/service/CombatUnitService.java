@@ -102,12 +102,13 @@ public class CombatUnitService {
     }
 
     /**
-     * 推演引擎与当前战场单位列表：激活想定后严格按 scenarioId 读取。
+     * 推演引擎与当前战场单位列表：仅返回「当前激活想定」下的战场单位。
+     * 未激活想定时返回空列表，避免把历史/演示遗留的全库单位当作当前态势（与指挥端「未加载想定」一致）。
      */
     public List<CombatUnit> getUnitsForBattleEngine() {
         String sid = scenarioService.getActiveScenarioId();
         if (sid == null || sid.isEmpty()) {
-            return repository.findAll();
+            return java.util.Collections.emptyList();
         }
         return repository.findByScenarioId(sid);
     }

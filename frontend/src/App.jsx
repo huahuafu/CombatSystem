@@ -1,6 +1,6 @@
 import React from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
-import TopNav from "./components/TopNav";
+import AppShell from "./layouts/AppShell";
 import CampaignCenterPage from "./pages/CampaignCenterPage";
 import RebuildCommanderPage from "./pages/RebuildCommanderPage";
 import RunCenterPage from "./pages/RunCenterPage";
@@ -8,8 +8,7 @@ import SimulationDashboardPage from "./pages/SimulationDashboardPage";
 
 export default function App() {
   return (
-    <div>
-      <TopNav />
+    <AppShell>
       <Routes>
         <Route path="/app/commander-next" element={<RebuildCommanderPage />} />
         <Route path="/app/simulation-dashboard" element={<SimulationDashboardPage />} />
@@ -21,6 +20,6 @@ export default function App() {
         <Route path="/campaign-center" element={<CampaignCenterPage />} />
         <Route path="*" element={<Navigate to="/app/commander-next" replace />} />
       </Routes>
-    </div>
+    </AppShell>
   );
 }

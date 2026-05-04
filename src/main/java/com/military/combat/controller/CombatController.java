@@ -233,6 +233,23 @@ public class CombatController {
         return m;
     }
 
+    /**
+     * 将想定恢复为文档内保存的初始兵力与目标状态，并清空本会话推演进度（回合、统计、活动执行态等）。
+     * 未传 id 时使用服务端当前激活想定。
+     */
+    @PostMapping("/scenario-data/reset-to-initial")
+    public Map<String, Object> resetScenarioToInitial(@RequestParam(required = false) String id) {
+        String sid = (id != null && !id.trim().isEmpty()) ? id.trim() : scenarioService.getActiveScenarioId();
+        if (sid == null || sid.isEmpty()) {
+            throw new IllegalArgumentException("未指定想定且当前无激活想定");
+        }
+        scenarioActivationService.resetScenarioToInitialState(sid);
+        Map<String, Object> m = new java.util.HashMap<>();
+        m.put("activeScenarioId", scenarioService.getActiveScenarioId());
+        m.put("mainLine", battlelineService.getMainLineForActiveScenario());
+        return m;
+    }
+
     @GetMapping("/scenario-data/active")
     public Map<String, Object> getActiveScenario() {
         Map<String, Object> m = new java.util.HashMap<>();

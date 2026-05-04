@@ -28,16 +28,24 @@ function unitGlyphSvgPaths(unitType: string): string {
       return `<ellipse cx="16" cy="18" rx="9" ry="3"/><circle cx="22" cy="18" r="1.2"/>`;
     case "UAV_RECON":
       return `<path d="M4 16 L10 16 L16 12 L22 16 L28 16 L22 18 L10 18 Z"/>`;
+    case "UAV_LONG_ENDURANCE":
+      return `<path d="M4 15 L12 15 L16 10 L20 15 L28 15 L24 19 L8 19 Z"/><path d="M16 10 L16 6" stroke-linecap="round"/>`;
     case "AWACS":
       return `<ellipse cx="16" cy="17" rx="10" ry="4"/><ellipse cx="16" cy="12" rx="3" ry="2"/>`;
     case "EW_JET":
       return `<path d="M6 17 L26 15 L24 12 L10 12 Z"/><path d="M18 12 L22 8 L20 12"/>`;
+    case "EW_ELINT_SHIP":
+      return `<path d="M5 21 L27 20 L25 16 L7 16 Z"/><circle cx="20" cy="17" r="2" fill="none" stroke="inherit"/>`;
     case "ASW_HELO":
       return `<ellipse cx="16" cy="13" rx="7" ry="1.5"/><rect x="11" y="14" width="10" height="5" rx="1"/>`;
     case "SHORE_MISSILE_BATTERY":
       return `<path d="M16 6 L20 22 L12 22 Z"/><line x1="16" y1="22" x2="16" y2="26" stroke-linecap="round"/><line x1="12" y1="26" x2="20" y2="26" stroke-linecap="round"/>`;
     case "SHORE_AIR_DEFENSE":
       return `<path d="M8 22 Q16 8 24 22 Z"/><rect x="12" y="22" width="8" height="4" rx="0.5"/>`;
+    case "SHORE_RADAR":
+      return `<rect x="10" y="10" width="12" height="14" rx="1"/><path d="M16 10 L16 6"/><circle cx="16" cy="17" r="4" fill="none" stroke="inherit"/>`;
+    case "SONAR_ARRAY":
+      return `<ellipse cx="16" cy="18" rx="12" ry="3"/><path d="M8 18 Q16 12 24 18" fill="none" stroke="inherit"/>`;
     default:
       return `<path d="M6 20 L26 19 L24 15 L8 15 Z"/>`;
   }

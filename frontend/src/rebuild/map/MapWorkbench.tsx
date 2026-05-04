@@ -1,4 +1,4 @@
-import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
+import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import {
   AimOutlined,
   BorderOutlined,
@@ -9,7 +9,7 @@ import {
   RollbackOutlined,
   SaveOutlined
 } from "@ant-design/icons";
-import { Button, Card, Descriptions, Modal, Space, Spin, Tooltip, Typography, message } from "antd";
+import { Button, Card, Descriptions, Modal, Segmented, Space, Spin, Switch, Tooltip, Typography, message } from "antd";
 import Map from "ol/Map";
 import View from "ol/View";
 import TileLayer from "ol/layer/Tile";
@@ -19,6 +19,7 @@ import VectorSource from "ol/source/Vector";
 import Feature from "ol/Feature";
 import Point from "ol/geom/Point";
 import LineString from "ol/geom/LineString";
+import Polygon from "ol/geom/Polygon";
 import { fromLonLat, toLonLat } from "ol/proj";
 import { Fill, Stroke, Style, Circle as CircleStyle } from "ol/style";
 import { getUnitMarkerStyle } from "./unitMapIcons";
@@ -32,6 +33,10 @@ import { httpJson } from "../../lib/api";
 import { getUnitTypeLabel } from "../force/forceCatalog";
 import type { DeployedUnit, ForceCamp } from "../force/forceTypes";
 import { useDeploymentStore } from "../../store/deploymentStore";
+import { useInfoStore } from "../../store/infoStore";
+import { buildRoundDigest, effectiveDetectorRangeNm, resolveSensorModel } from "../info/infoWarfareEngine";
+import { bearingDeg, circlePolygon3857, sectorPolygon3857 } from "../info/infoGeometry";
+import type { BattlePerspective } from "../info/infoTypes";
 import { remainForTemplate, getTemplateByTypeAndCamp } from "../force/forceCatalog";
 import { ensureCanvas2dWillReadFrequentlyPatch } from "./canvas2dContextPatch";
 import "ol/ol.css";
@@ -69,7 +74,32 @@ const MapWorkbench = forwardRef<MapWorkbenchHandle, MapWorkbenchProps>(function 
   const canRedo = useDeploymentStore((s) => s.future.length > 0);
   const lastSelectedUnitType = useDeploymentStore((s) => s.lastSelectedUnitType);
 
-  const visibleUnits = deployedUnits.filter((u) => u.side === commanderSide);
+  const perspective = useInfoStore((s) => s.perspective);
+  const setPerspective = useInfoStore((s) => s.setPerspective);
+  const fogOfWarEnabled = useInfoStore((s) => s.fogOfWarEnabled);
+  const setFogOfWarEnabled = useInfoStore((s) => s.setFogOfWarEnabled);
+  const environment = useInfoStore((s) => s.environment);
+  const unitInfoCombat = useInfoStore((s) => s.unitInfoCombat);
+  const ghostEnemyUntil = useInfoStore((s) => s.ghostEnemyUntil);
+  const setLastDigest = useInfoStore((s) => s.setLastDigest);
+  const syncGhostContacts = useInfoStore((s) => s.syncGhostContacts);
+  const ensureUnitsHaveDefaults = useInfoStore((s) => s.ensureUnitsHaveDefaults);
+
+  const digest = useMemo(
+    () => buildRoundDigest(0, commanderSide, deployedUnits, environment, unitInfoCombat),
+    [commanderSide, deployedUnits, environment, unitInfoCombat]
+  );
+
+  const unitsToDraw = useMemo(() => {
+    if (perspective === "GOD") return deployedUnits;
+    const own = deployedUnits.filter((u) => u.side === commanderSide);
+    if (!fogOfWarEnabled) return deployedUnits;
+    const det = new Set(digest.detections.map((d) => d.targetId));
+    const now = Date.now();
+    const enemies = deployedUnits.filter((u) => u.side !== commanderSide);
+    const visibleEnemies = enemies.filter((e) => det.has(e.id) || (ghostEnemyUntil[e.id] ?? 0) > now);
+    return [...own, ...visibleEnemies];
+  }, [deployedUnits, commanderSide, perspective, fogOfWarEnabled, digest.detections, ghostEnemyUntil]);
 
   const objectivesRef = useRef(objectives);
   const unitsRef = useRef(deployedUnits);
@@ -77,6 +107,18 @@ const MapWorkbench = forwardRef<MapWorkbenchHandle, MapWorkbenchProps>(function 
   const routeDraftRef = useRef({ enabled: false, targetIds: [] as string[], waypoints: [] as { longitude: number; latitude: number }[] });
   const selectedEntitiesRef = useRef<unknown[]>([]);
   const commanderSideRef = useRef(commanderSide);
+  const perspectiveRef = useRef<BattlePerspective>("COMMAND");
+
+  const mapRootRef = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<Map | null>(null);
+  const unitLayerRef = useRef<VectorLayer<VectorSource> | null>(null);
+  const objectiveLayerRef = useRef<VectorLayer<VectorSource> | null>(null);
+  const lineLayerRef = useRef<VectorLayer<VectorSource> | null>(null);
+  const jamLayerRef = useRef<VectorLayer<VectorSource> | null>(null);
+  const datalinkLayerRef = useRef<VectorLayer<VectorSource> | null>(null);
+  const detectionLayerRef = useRef<VectorLayer<VectorSource> | null>(null);
+  const dragBoxRef = useRef<DragBox | null>(null);
+  const translateRef = useRef<Translate | null>(null);
 
   const [selectedEntity, setSelectedEntity] = useState<Record<string, unknown> | null>(null);
   const [selectedEntities, setSelectedEntities] = useState<Record<string, unknown>[]>([]);
@@ -93,13 +135,6 @@ const MapWorkbench = forwardRef<MapWorkbenchHandle, MapWorkbenchProps>(function 
   const [saving, setSaving] = useState(false);
   const [loadingMap, setLoadingMap] = useState(true);
   const [mapError, setMapError] = useState("");
-  const mapRootRef = useRef<HTMLDivElement | null>(null);
-  const mapRef = useRef<Map | null>(null);
-  const unitLayerRef = useRef<VectorLayer<VectorSource> | null>(null);
-  const objectiveLayerRef = useRef<VectorLayer<VectorSource> | null>(null);
-  const lineLayerRef = useRef<VectorLayer<VectorSource> | null>(null);
-  const dragBoxRef = useRef<DragBox | null>(null);
-  const translateRef = useRef<Translate | null>(null);
 
   const [dropState, drop] = useDrop(
     () => ({
@@ -161,6 +196,23 @@ const MapWorkbench = forwardRef<MapWorkbenchHandle, MapWorkbenchProps>(function 
   useEffect(() => {
     commanderSideRef.current = commanderSide;
   }, [commanderSide]);
+
+  useEffect(() => {
+    perspectiveRef.current = perspective;
+  }, [perspective]);
+
+  useEffect(() => {
+    ensureUnitsHaveDefaults(deployedUnits.map((u) => u.id));
+  }, [deployedUnits, ensureUnitsHaveDefaults]);
+
+  useEffect(() => {
+    setLastDigest(digest);
+  }, [digest, setLastDigest]);
+
+  useEffect(() => {
+    if (perspective === "GOD" || !fogOfWarEnabled) return;
+    syncGhostContacts(digest.detections.map((d) => d.targetId));
+  }, [digest.detections, perspective, fogOfWarEnabled, syncGhostContacts]);
 
   useEffect(() => {
     if (!deployedUnits.length && !objectives.length) {
@@ -277,14 +329,25 @@ const MapWorkbench = forwardRef<MapWorkbenchHandle, MapWorkbenchProps>(function 
         })
       });
 
-      unitLayerRef.current = new VectorLayer({ source: new VectorSource() });
-      objectiveLayerRef.current = new VectorLayer({ source: new VectorSource() });
-      lineLayerRef.current = new VectorLayer({ source: new VectorSource() });
+      jamLayerRef.current = new VectorLayer({ source: new VectorSource(), zIndex: 4 });
+      datalinkLayerRef.current = new VectorLayer({ source: new VectorSource(), zIndex: 5 });
+      detectionLayerRef.current = new VectorLayer({ source: new VectorSource(), zIndex: 6 });
+      lineLayerRef.current = new VectorLayer({ source: new VectorSource(), zIndex: 7 });
+      objectiveLayerRef.current = new VectorLayer({ source: new VectorSource(), zIndex: 8 });
+      unitLayerRef.current = new VectorLayer({ source: new VectorSource(), zIndex: 9 });
 
       mapRef.current = new Map({
         target: mapRootRef.current,
         controls: defaultControls().extend([new FullScreen()]),
-        layers: [baseLayer, lineLayerRef.current, objectiveLayerRef.current, unitLayerRef.current],
+        layers: [
+          baseLayer,
+          jamLayerRef.current,
+          datalinkLayerRef.current,
+          detectionLayerRef.current,
+          lineLayerRef.current,
+          objectiveLayerRef.current,
+          unitLayerRef.current
+        ],
         view: new View({
           center: fromLonLat([121.5, 22.8]),
           zoom: 8
@@ -438,7 +501,7 @@ const MapWorkbench = forwardRef<MapWorkbenchHandle, MapWorkbenchProps>(function 
     const feature = mapRef.current.forEachFeatureAtPixel(pixel, (f) => f);
     const payload = feature?.get("payload") as Record<string, unknown> | undefined;
     if (payload?.kind === "unit" && payload.side !== commanderSideRef.current) {
-      return;
+      if (perspectiveRef.current !== "GOD") return;
     }
     if (payload) {
       const selectedIds = new Set(selectedEntitiesRef.current.map((x) => (x as { id?: string }).id));
@@ -461,7 +524,7 @@ const MapWorkbench = forwardRef<MapWorkbenchHandle, MapWorkbenchProps>(function 
     objSource.clear();
     lineSource.clear();
 
-    visibleUnits.forEach((u) => {
+    unitsToDraw.forEach((u) => {
       const feature = new Feature({ geometry: new Point(fromLonLat([u.longitude, u.latitude])) });
       feature.set("payload", { kind: "unit", ...u });
       feature.setStyle(getUnitMarkerStyle(String(u.type), u.side, selectedEntity?.id === u.id));
@@ -488,8 +551,9 @@ const MapWorkbench = forwardRef<MapWorkbenchHandle, MapWorkbenchProps>(function 
       objSource.addFeature(feature);
     });
 
-    if (visibleUnits.length > 1) {
-      const coordinates = visibleUnits.map((x) => fromLonLat([x.longitude, x.latitude]));
+    const ownVisibleLine = unitsToDraw.filter((x) => x.side === commanderSide);
+    if (ownVisibleLine.length > 1) {
+      const coordinates = ownVisibleLine.map((x) => fromLonLat([x.longitude, x.latitude]));
       const defenseLine = new Feature({ geometry: new LineString(coordinates) });
       defenseLine.setStyle(new Style({ stroke: new Stroke({ color: "#60a5fa", width: 2, lineDash: [8, 6] }) }));
       lineSource.addFeature(defenseLine);
@@ -510,7 +574,89 @@ const MapWorkbench = forwardRef<MapWorkbenchHandle, MapWorkbenchProps>(function 
       });
     });
     mapRef.current?.updateSize();
-  }, [deployedUnits, visibleUnits, objectives, selectedEntity, routes, commanderSide]);
+  }, [deployedUnits, unitsToDraw, objectives, selectedEntity, routes, commanderSide]);
+
+  useEffect(() => {
+    if (!jamLayerRef.current || !datalinkLayerRef.current || !detectionLayerRef.current) return;
+    const jamSrc = jamLayerRef.current.getSource();
+    const dlSrc = datalinkLayerRef.current.getSource();
+    const detSrc = detectionLayerRef.current.getSource();
+    if (!jamSrc || !dlSrc || !detSrc) return;
+    jamSrc.clear();
+    dlSrc.clear();
+    detSrc.clear();
+
+    const { jammingZones, datalinkEdges } = digest;
+    const mySide = commanderSide;
+
+    jammingZones.forEach((z) => {
+      const ring = circlePolygon3857(z.centerLon, z.centerLat, z.radiusNm);
+      const f = new Feature({ geometry: new Polygon([ring]) });
+      const isOwn = z.side === mySide;
+      f.setStyle(
+        new Style({
+          fill: new Fill({
+            color: isOwn ? "rgba(34, 211, 238, 0.12)" : "rgba(248, 113, 113, 0.14)"
+          }),
+          stroke: new Stroke({
+            color: isOwn ? "#22d3ee" : "#f87171",
+            width: 2,
+            lineDash: [6, 5]
+          })
+        })
+      );
+      jamSrc.addFeature(f);
+    });
+
+    datalinkEdges.forEach((e) => {
+      const a = deployedUnits.find((u) => u.id === e.fromUnitId);
+      const b = deployedUnits.find((u) => u.id === e.toUnitId);
+      if (!a || !b) return;
+      const line = new Feature({
+        geometry: new LineString([fromLonLat([a.longitude, a.latitude]), fromLonLat([b.longitude, b.latitude])])
+      });
+      const q = e.quality;
+      line.setStyle(
+        new Style({
+          stroke: new Stroke({
+            color: e.degradedByJamming ? `rgba(196, 181, 253, ${0.35 + q * 0.45})` : `rgba(167, 139, 250, ${0.45 + q * 0.5})`,
+            width: 1.5 + q,
+            lineDash: e.degradedByJamming ? [4, 4] : undefined
+          })
+        })
+      );
+      dlSrc.addFeature(line);
+    });
+
+    const own = deployedUnits.filter((u) => u.side === mySide);
+    const enemies = deployedUnits.filter((u) => u.side !== mySide);
+    const elon = enemies.length ? enemies.reduce((s, x) => s + x.longitude, 0) / enemies.length : mySide === "RED" ? 122.2 : 121.2;
+    const elat = enemies.length ? enemies.reduce((s, x) => s + x.latitude, 0) / enemies.length : 22.8;
+
+    own.forEach((u) => {
+      const model = resolveSensorModel(u);
+      if (!model) return;
+      const rng = effectiveDetectorRangeNm(u, mySide, environment, unitInfoCombat, jammingZones);
+      if (rng <= 0.5) return;
+      let coords: number[][];
+      if (model.sectorHalfAngleDeg >= 179) {
+        coords = [circlePolygon3857(u.longitude, u.latitude, rng)];
+      } else {
+        const br = bearingDeg(u.longitude, u.latitude, elon, elat);
+        coords = [sectorPolygon3857(u.longitude, u.latitude, br, model.sectorHalfAngleDeg, rng)];
+      }
+      const poly = new Feature({ geometry: new Polygon(coords) });
+      poly.setStyle(
+        new Style({
+          fill: new Fill({ color: "rgba(56, 189, 248, 0.06)" }),
+          stroke: new Stroke({ color: "rgba(56, 189, 248, 0.55)", width: 1.2, lineDash: [10, 6] })
+        })
+      );
+      detSrc.addFeature(poly);
+    });
+
+    mapRef.current?.updateSize();
+  }, [digest, deployedUnits, commanderSide, environment, unitInfoCombat]);
 
   const selectedCount = selectedEntities.length;
 
@@ -528,6 +674,9 @@ const MapWorkbench = forwardRef<MapWorkbenchHandle, MapWorkbenchProps>(function 
       mapRef.current.setTarget(undefined);
       mapRef.current = null;
     }
+    jamLayerRef.current = null;
+    datalinkLayerRef.current = null;
+    detectionLayerRef.current = null;
     unitLayerRef.current = null;
     objectiveLayerRef.current = null;
     lineLayerRef.current = null;
@@ -658,7 +807,29 @@ const MapWorkbench = forwardRef<MapWorkbenchHandle, MapWorkbenchProps>(function 
       size="small"
       styles={{ body: { flex: 1, minHeight: 0, display: "flex", flexDirection: "column", padding: 10 } }}
       extra={
-        <Space size={6}>
+        <Space size={6} wrap>
+          <Segmented
+            size="small"
+            value={perspective}
+            onChange={(v) => setPerspective(v as BattlePerspective)}
+            options={[
+              { label: "指挥", value: "COMMAND" },
+              { label: "上帝", value: "GOD" }
+            ]}
+          />
+          <Tooltip title="指挥视角：仅己方 + 已探测/延迟隐去的敌方">
+            <Space size={4} align="center">
+              <Text type="secondary" style={{ fontSize: 11 }}>
+                迷雾
+              </Text>
+              <Switch
+                size="small"
+                checked={fogOfWarEnabled}
+                onChange={setFogOfWarEnabled}
+                disabled={perspective === "GOD"}
+              />
+            </Space>
+          </Tooltip>
           <Tooltip title="显示/隐藏单位层">
             <Button size="small" icon={<CompassOutlined />} onClick={toggleUnitLayer} />
           </Tooltip>

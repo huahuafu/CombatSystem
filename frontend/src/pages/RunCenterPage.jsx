@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Button, Card, Collapse, Input, InputNumber, Space, Table, Tag, Typography, message } from "antd";
 import { httpJson, downloadJson } from "../lib/api";
+import { useInfoStore } from "../store/infoStore";
+import InfoReplaySection from "../rebuild/replay/InfoReplaySection";
 
 function labelTip(lab) {
   const v = String(lab || "").toUpperCase();
@@ -74,6 +76,10 @@ export default function RunCenterPage() {
       const a = await httpJson("/combat/scenario-data/active");
       const id = a?.activeScenarioId ? String(a.activeScenarioId) : "";
       setScenarioId(id);
+      if (id) {
+        useInfoStore.getState().setBoundScenarioId(id);
+        useInfoStore.getState().loadArchiveFromSession(id);
+      }
       message.info(`已读取激活想定：${id || "—"}`);
     } catch (e) {
       message.error(e.message || "读取失败");
@@ -312,6 +318,8 @@ export default function RunCenterPage() {
           )}
         </Card>
       </div>
+
+      <InfoReplaySection />
 
       <Card title="回放结果（/runs/{id}/replay）" size="small" style={{ marginTop: 14 }}>
         <Typography.Paragraph type="secondary" style={{ color: "#9fb0cc", fontSize: 12 }}>

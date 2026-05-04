@@ -26,20 +26,51 @@ import {
   FlagOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
-  RocketOutlined
+  RocketOutlined,
+  UndoOutlined
 } from "@ant-design/icons";
 import { DndProvider } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
 import MapWorkbench from "../rebuild/map/MapWorkbench";
 import ForceDeployPalette from "../rebuild/map/ForceDeployPalette";
+import InfoCombatConfigTab from "../rebuild/info/InfoCombatConfigTab";
+import { validateInfoDeployment } from "../rebuild/info/infoDeploymentValidate";
+import { useInfoStore } from "../store/infoStore";
 import { OBJECTIVE_TYPE_OPTIONS } from "../rebuild/map/deployMeta";
-import { getUnitTypeLabel } from "../rebuild/force/forceCatalog";
+import { getTemplateByTypeAndCamp, getUnitTypeLabel } from "../rebuild/force/forceCatalog";
 import { httpJson } from "../lib/api";
 import { useSimulationStore } from "../store/simulationStore";
 import { useDeploymentStore } from "../store/deploymentStore";
 import { EnvironmentOutlined, DeleteOutlined, SaveOutlined } from "@ant-design/icons";
 
 const { Text, Paragraph } = Typography;
+
+/** 从想定 API 返回的兵力列表恢复为部署编辑器用的结构 */
+function mapScenarioUnitsToDeployed(units) {
+  const list = Array.isArray(units) ? units : [];
+  return list
+    .filter((u) => u != null)
+    .map((u) => {
+      const side = u.side === "BLUE" ? "BLUE" : "RED";
+      const tpl = getTemplateByTypeAndCamp(u.type, side);
+      const id = String(u.id || "").trim();
+      return {
+        id,
+        name: u.name || tpl?.name || String(u.type || "单位"),
+        side,
+        type: String(u.type || tpl?.type || "DESTROYER"),
+        latitude: u.latitude != null ? Number(u.latitude) : 0,
+        longitude: u.longitude != null ? Number(u.longitude) : 0,
+        mission: u.mission,
+        modelLabel: tpl?.modelLabel,
+        coreParams:
+          u.coreParams && typeof u.coreParams === "object" && Object.keys(u.coreParams).length
+            ? u.coreParams
+            : tpl?.coreParams
+      };
+    })
+    .filter((u) => u.id);
+}
 
 function parseIssueActions(issues) {
   return (issues || []).map((raw) => {
@@ -51,6 +82,8 @@ function parseIssueActions(issues) {
       action = { label: "去部署兵力", panel: "right", tab: "units" };
     } else if (/想定|scenario|激活|锁定/i.test(text)) {
       action = { label: "去想定管理", panel: "left" };
+    } else if (/信息|感知|电子|数据链|反潜信息|制信息/i.test(text)) {
+      action = { label: "去信息作战配置", panel: "right", tab: "info" };
     }
     return { text, action };
   });
@@ -68,6 +101,7 @@ export default function RebuildCommanderPage() {
   const setCommanderRole = useSimulationStore((s) => s.setCommanderRole);
   const deployedUnits = useDeploymentStore((s) => s.deployedUnits);
   const clearAllUnits = useDeploymentStore((s) => s.clearAll);
+  const replaceAllNoHistory = useDeploymentStore((s) => s.replaceAllNoHistory);
   const [goal, setGoal] = useState("以关键据点为核心组织攻防推演");
   const [objectives, setObjectives] = useState([]);
   const [scenarioName, setScenarioName] = useState("OpenLayers重构想定");
@@ -82,6 +116,13 @@ export default function RebuildCommanderPage() {
   useEffect(() => {
     loadInitialData();
   }, []);
+
+  useEffect(() => {
+    if (activeScenarioId) {
+      useInfoStore.getState().setBoundScenarioId(activeScenarioId);
+      useInfoStore.getState().loadArchiveFromSession(activeScenarioId);
+    }
+  }, [activeScenarioId]);
 
   async function loadInitialData() {
     const [scenarioList, active] = await Promise.all([
@@ -99,6 +140,25 @@ export default function RebuildCommanderPage() {
     await fetch(`/combat/scenario-data/set-active?id=${encodeURIComponent(selectedScenarioId)}`, { method: "POST" });
     setActiveScenarioId(selectedScenarioId);
     message.success("已激活所选想定");
+  }
+
+  async function resetActiveScenarioToInitial() {
+    if (!activeScenarioId) {
+      message.warning("请先激活想定后再重置");
+      return;
+    }
+    try {
+      await httpJson(`/combat/scenario-data/reset-to-initial?id=${encodeURIComponent(activeScenarioId)}`, {
+        method: "POST"
+      });
+      const scenario = await httpJson(`/combat/scenario-data/${encodeURIComponent(activeScenarioId)}`);
+      replaceAllNoHistory(mapScenarioUnitsToDeployed(scenario?.units));
+      setObjectives(Array.isArray(scenario?.objectives) ? scenario.objectives : []);
+      await loadInitialData();
+      message.success("已重置为想定内保存的初始态势（回合、战损与活动执行态已清空）");
+    } catch (e) {
+      message.error(e?.message || "重置失败");
+    }
   }
 
   async function deleteSelectedScenario() {
@@ -173,13 +233,23 @@ export default function RebuildCommanderPage() {
         method: "POST",
         body: JSON.stringify(payload)
       });
-      setValidation(result);
-      if (result?.valid) {
-        message.success("部署校验通过");
+      if (result == null) {
+        setValidation(null);
+        return null;
+      }
+      const infoV = validateInfoDeployment(deployedUnits, commanderSide);
+      const merged = {
+        ...result,
+        valid: Boolean(result.valid) && infoV.valid,
+        issues: [...(result.issues || []), ...infoV.issues]
+      };
+      setValidation(merged);
+      if (merged.valid) {
+        message.success("部署校验通过（含信息维度）");
       } else {
         message.warning("部署校验未通过，请查看右侧说明");
       }
-      return result;
+      return merged;
     } catch (e) {
       message.error(e?.message || "部署校验请求失败");
       setValidation(null);
@@ -469,6 +539,18 @@ export default function RebuildCommanderPage() {
                     >
                       按当前部署创建并激活
                     </Button>
+                    <Popconfirm
+                      title="重置当前激活想定？"
+                      description="战场单位与目标将按想定文档中已保存的部署恢复；推演回合、胜负记录、作战活动执行态及与本想定兵力相关的交互事件会一并清空。若曾用「保存部署」覆盖想定，则初始即为当时保存的版本。"
+                      okText="重置"
+                      cancelText="取消"
+                      disabled={!activeScenarioId}
+                      onConfirm={resetActiveScenarioToInitial}
+                    >
+                      <Button block size="small" icon={<UndoOutlined />} disabled={!activeScenarioId}>
+                        重置激活想定为初始
+                      </Button>
+                    </Popconfirm>
                   </Space>
                   <div className="rebuild-scenario-table" style={{ marginTop: 10 }}>
                     <Table
@@ -685,6 +767,11 @@ export default function RebuildCommanderPage() {
                           </Space>
                         </Card>
                       )
+                    },
+                    {
+                      key: "info",
+                      label: "信息作战配置",
+                      children: <InfoCombatConfigTab commanderSide={commanderSide} deployedUnits={deployedUnits} />
                     },
                     {
                       key: "summary",

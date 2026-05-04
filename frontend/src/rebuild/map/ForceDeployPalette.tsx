@@ -7,6 +7,8 @@ import {
   CloudOutlined,
   ColumnHeightOutlined,
   ControlOutlined,
+  DeploymentUnitOutlined,
+  EyeOutlined,
   PartitionOutlined,
   RadarChartOutlined,
   RocketOutlined,
@@ -32,11 +34,15 @@ const ICON_MAP: Record<ForceIconKey, React.ReactNode> = {
   submarine: <ColumnHeightOutlined />,
   uuv: <ColumnHeightOutlined />,
   uav: <RadarChartOutlined />,
+  uavLong: <EyeOutlined />,
   awacs: <CloudOutlined />,
   ew: <ThunderboltOutlined />,
+  elintShip: <DeploymentUnitOutlined />,
   helo: <ControlOutlined />,
   shoreMissile: <BankOutlined />,
-  shoreAd: <ApartmentOutlined />
+  shoreAd: <ApartmentOutlined />,
+  shoreRadar: <RadarChartOutlined />,
+  sonarArray: <ColumnHeightOutlined />
 };
 
 function PaletteRow({
@@ -119,7 +125,7 @@ export default function ForceDeployPalette({ commanderSide, deployedUnits, onQui
   const setLastSelectedType = useDeploymentStore((s) => s.setLastSelectedType);
   const grouped = templatesByCategory(commanderSide);
 
-  const items = (["SURFACE", "AIR", "UNDERWATER", "SHORE"] as const).map((cat) => ({
+  const items = (["SURFACE", "AIR", "UNDERWATER", "SHORE", "INFORMATION"] as const).map((cat) => ({
     key: cat,
     label: FORCE_CATEGORY_LABELS[cat],
     children: (
@@ -147,7 +153,7 @@ export default function ForceDeployPalette({ commanderSide, deployedUnits, onQui
 
   return (
     <div className="force-deploy-palette">
-      <Collapse size="small" defaultActiveKey={["SURFACE", "AIR", "UNDERWATER", "SHORE"]} items={items} />
+      <Collapse size="small" defaultActiveKey={["SURFACE", "AIR", "UNDERWATER", "SHORE", "INFORMATION"]} items={items} />
       <Text type="secondary" style={{ fontSize: 11, display: "block", marginTop: 8 }}>
         拖拽至地图部署；单击选中用于双击地图快捷部署；双击条目在视图中心部署。
       </Text>

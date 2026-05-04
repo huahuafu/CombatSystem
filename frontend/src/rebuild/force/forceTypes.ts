@@ -1,7 +1,7 @@
 /** 与 simulationStore / 后端 CombatUnit.side 一致 */
 export type ForceCamp = "RED" | "BLUE";
 
-export type ForceCategory = "SURFACE" | "AIR" | "UNDERWATER" | "SHORE";
+export type ForceCategory = "SURFACE" | "AIR" | "UNDERWATER" | "SHORE" | "INFORMATION";
 
 /** 兵力类型编码（写入想定 JSON 的 type 字段） */
 export type UnitTypeCode =
@@ -9,16 +9,20 @@ export type UnitTypeCode =
   | "FRIGATE"
   | "SUBMARINE"
   | "UAV_RECON"
+  | "UAV_LONG_ENDURANCE"
   | "CARRIER"
   | "LHD"
   | "SUPPLY_SHIP"
   | "MINESWEEPER"
   | "AWACS"
   | "EW_JET"
+  | "EW_ELINT_SHIP"
   | "ASW_HELO"
   | "UUV"
   | "SHORE_MISSILE_BATTERY"
-  | "SHORE_AIR_DEFENSE";
+  | "SHORE_AIR_DEFENSE"
+  | "SHORE_RADAR"
+  | "SONAR_ARRAY";
 
 /** 核心战技参数（前端推演展示；后端可忽略额外字段） */
 export interface UnitCoreParams {
@@ -30,6 +34,10 @@ export interface UnitCoreParams {
   speedKts: number;
   /** 最大潜深（米），水面/空中/岸基为 undefined */
   maxDepthM?: number;
+  /** 主传感器扇区半角（度），180 为全向 */
+  sensorSectorHalfDeg?: number;
+  /** 作为目标时的隐身/RCS 折算，1 为基准，越小越难被探测 */
+  signatureFactor?: number;
 }
 
 /** 兵力面板条目（编制表） */
@@ -58,11 +66,15 @@ export type ForceIconKey =
   | "submarine"
   | "uuv"
   | "uav"
+  | "uavLong"
   | "awacs"
   | "ew"
+  | "elintShip"
   | "helo"
   | "shoreMissile"
-  | "shoreAd";
+  | "shoreAd"
+  | "shoreRadar"
+  | "sonarArray";
 
 /** 已部署兵力（与现有 API 字段兼容，可附加 modelLabel / coreParams） */
 export interface DeployedUnit {

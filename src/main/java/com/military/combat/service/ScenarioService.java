@@ -349,4 +349,29 @@ public class ScenarioService {
             scenarioDataRepository.save(data);
         }
     }
+
+    /**
+     * 清除想定文档中的胜负结论（推演结束后会写入 Mongo，不清理则再次激活仍会读到旧结果）。
+     */
+    public void clearWinnerAndReasonInScenarioDocument(String scenarioId) {
+        if (scenarioId == null || scenarioId.isEmpty()) {
+            return;
+        }
+        ScenarioData data = scenarioDataRepository.findById(scenarioId).orElse(null);
+        if (data == null) {
+            return;
+        }
+        boolean dirty = false;
+        if (data.getWinner() != null && !data.getWinner().isEmpty()) {
+            data.setWinner(null);
+            dirty = true;
+        }
+        if (data.getWinReason() != null && !data.getWinReason().isEmpty()) {
+            data.setWinReason(null);
+            dirty = true;
+        }
+        if (dirty) {
+            scenarioDataRepository.save(data);
+        }
+    }
 }

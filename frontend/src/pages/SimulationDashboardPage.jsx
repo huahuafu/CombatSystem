@@ -27,6 +27,8 @@ import KillChainStagePanel from "../simulation/KillChainStagePanel";
 import { KILL_CHAIN_STAGES } from "../simulation/killChainMeta";
 import { httpJson } from "../lib/api";
 import { useSimulationStore } from "../store/simulationStore";
+import { useInfoStore } from "../store/infoStore";
+import { buildRoundDigest, killChainFactorsFromDigest } from "../rebuild/info/infoWarfareEngine";
 
 const { Text, Paragraph } = Typography;
 
@@ -123,6 +125,7 @@ function mapCenterFromData(units, objectives) {
 export default function SimulationDashboardPage() {
   const commanderSide = useSimulationStore((s) => s.commanderSide);
   const setStoreScenarioId = useSimulationStore((s) => s.setActiveScenarioId);
+  const lastDigest = useInfoStore((s) => s.lastDigest);
 
   const [state, setState] = useState({});
   const [snapshots, setSnapshots] = useState({ find: {}, fix: {}, track: {}, target: {}, engage: {}, assess: {} });
@@ -152,8 +155,8 @@ export default function SimulationDashboardPage() {
 
   const overallAlertCount = useMemo(() => STAGES.reduce((sum, k) => sum + stageAlertCount(k), 0), [snapshots]);
 
-  /** 仅在 hasTacticalMetrics(snap) 为真时调用：以快照中的交战/评估指标为基准做方案差分对比 */
-  const buildPlansBySnapshot = (snap) => {
+  /** 仅在 hasTacticalMetrics(snap) 为真时调用：以快照中的交战/评估指标为基准做方案差分对比；infoAdvantage 0–1 调制信息优势 */
+  const buildPlansBySnapshot = (snap, infoAdvantage = 0.55) => {
     const engage = snap.engage || {};
     const assess = snap.assess || {};
     const baseWin = Number(engage.winRate ?? assess.winRate ?? 0);
@@ -198,8 +201,14 @@ export default function SimulationDashboardPage() {
         routePlan: []
       }
     ];
-    const best = list.reduce((a, b) => (a.projectedWinRate >= b.projectedWinRate ? a : b));
-    return list.map((p) => ({ ...p, recommended: p.id === best.id }));
+    const bias = 0.9 + Math.max(0, Math.min(1, infoAdvantage)) * 0.22;
+    const adjusted = list.map((p) => ({
+      ...p,
+      projectedWinRate: Math.min(0.99, p.projectedWinRate * bias),
+      missionSuccessRate: Math.min(0.99, (p.missionSuccessRate ?? p.projectedWinRate) * (0.96 + infoAdvantage * 0.06))
+    }));
+    const best = adjusted.reduce((a, b) => (a.projectedWinRate >= b.projectedWinRate ? a : b));
+    return adjusted.map((p) => ({ ...p, recommended: p.id === best.id }));
   };
 
   const refreshAll = async () => {
@@ -228,12 +237,6 @@ export default function SimulationDashboardPage() {
 
       setStoreScenarioId(sid);
 
-      if (hasTacticalMetrics(fresh)) {
-        setPlans(buildPlansBySnapshot(fresh));
-      } else {
-        setPlans([]);
-      }
-
       let scenario = null;
       try {
         scenario = await httpJson(`/combat/scenario-data/${encodeURIComponent(sid)}`);
@@ -249,6 +252,29 @@ export default function SimulationDashboardPage() {
       setMapUnits(merged);
       setMapObjectives(scenario?.objectives || []);
       setMapFlash(Date.now());
+
+      useInfoStore.getState().setBoundScenarioId(sid);
+      useInfoStore.getState().ensureUnitsHaveDefaults(merged.map((u) => u.id));
+      const roundNum = typeof st?.round === "number" && !Number.isNaN(st.round) ? st.round : 0;
+      if (merged.length) {
+        const digest = buildRoundDigest(
+          roundNum,
+          commanderSide,
+          merged,
+          useInfoStore.getState().environment,
+          useInfoStore.getState().unitInfoCombat
+        );
+        useInfoStore.getState().setLastDigest(digest);
+        useInfoStore.getState().appendRoundArchive(digest);
+        useInfoStore.getState().persistArchiveToSession();
+      }
+
+      if (hasTacticalMetrics(fresh)) {
+        const lastAdv = useInfoStore.getState().lastDigest?.infoAdvantage ?? 0.55;
+        setPlans(buildPlansBySnapshot(fresh, lastAdv));
+      } else {
+        setPlans([]);
+      }
     } catch (e) {
       message.error(e?.message || "刷新失败");
     } finally {
@@ -397,6 +423,55 @@ export default function SimulationDashboardPage() {
                 stageRunningPath={stageRunningPath}
                 roundTrail={roundTrail}
               />
+            </Card>
+
+            <Card size="small" className="commander-panel-card" title="信息作战 → 杀伤链六段效率">
+              {!lastDigest ? (
+                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="刷新后将按探测/干扰/数据链计算" />
+              ) : (
+                <Space direction="vertical" size={8} style={{ width: "100%" }}>
+                  <div className="kv text-sm">
+                    <span>本回合探测批数</span>
+                    <strong>{lastDigest.detections.length}</strong>
+                  </div>
+                  <div className="kv text-sm">
+                    <span>数据链通畅度</span>
+                    <strong>{(lastDigest.datalinkIntegrity * 100).toFixed(0)}%</strong>
+                  </div>
+                  <div className="kv text-sm">
+                    <span>信息优势指数</span>
+                    <strong>{(lastDigest.infoAdvantage * 100).toFixed(0)}%</strong>
+                  </div>
+                  <Divider style={{ margin: "8px 0" }} />
+                  {(() => {
+                    const f = killChainFactorsFromDigest(lastDigest);
+                    const rows = [
+                      { k: "FIND", v: f.find },
+                      { k: "FIX", v: f.fix },
+                      { k: "TRACK", v: f.track },
+                      { k: "TARGET", v: f.target },
+                      { k: "ENGAGE", v: f.engage },
+                      { k: "ASSESS", v: f.assess }
+                    ];
+                    return rows.map((r) => (
+                      <div key={r.k} style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
+                        <span className="muted">{r.k}</span>
+                        <Progress
+                          style={{ width: 120, marginInlineStart: 8 }}
+                          percent={Math.round(r.v * 100)}
+                          size="small"
+                          showInfo={false}
+                          strokeColor="#38bdf8"
+                        />
+                        <span>{(r.v * 100).toFixed(0)}%</span>
+                      </div>
+                    ));
+                  })()}
+                  <Text type="secondary" style={{ fontSize: 11 }}>
+                    因子由探测结果、电子对抗损益、数据链质量综合导出，并参与右侧 AI 方案胜率加权。
+                  </Text>
+                </Space>
+              )}
             </Card>
           </div>
         </aside>

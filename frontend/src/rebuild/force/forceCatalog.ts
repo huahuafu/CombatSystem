@@ -1,18 +1,20 @@
-import type { DeployedUnit, ForceCamp, ForceCategory, ForceTemplate, UnitTypeCode } from "./forceTypes";
+import type { DeployedUnit, ForceCamp, ForceCategory, ForceTemplate, UnitCoreParams, UnitTypeCode } from "./forceTypes";
 
 export const FORCE_CATEGORY_LABELS: Record<ForceCategory, string> = {
   SURFACE: "水面舰艇",
   AIR: "空中力量",
   UNDERWATER: "水下力量",
-  SHORE: "岸基力量"
+  SHORE: "岸基力量",
+  INFORMATION: "信息作战"
 };
 
 const cp = (
   radarRangeNm: number,
   missileRangeNm: number,
   speedKts: number,
-  maxDepthM?: number
-) => ({ radarRangeNm, missileRangeNm, speedKts, maxDepthM });
+  maxDepthM?: number,
+  extra?: Partial<UnitCoreParams>
+): UnitCoreParams => ({ radarRangeNm, missileRangeNm, speedKts, maxDepthM, ...extra });
 
 function row(
   id: string,
@@ -61,10 +63,19 @@ export const FORCE_TEMPLATES: ForceTemplate[] = [
   row("RED_SHORE_AD", "SHORE_AIR_DEFENSE", "岸基防空阵地", "shoreAd", "RED", "SHORE", 2, "红旗-9B阵地", cp(220, 120, 0)),
   row("BLUE_SHORE_AD", "SHORE_AIR_DEFENSE", "岸基防空阵地", "shoreAd", "BLUE", "SHORE", 2, "PAC-3阵地", cp(200, 100, 0)),
   row("RED_SHORE_ASM", "SHORE_MISSILE_BATTERY", "岸防导弹阵地", "shoreMissile", "RED", "SHORE", 2, "鹰击-12阵地", cp(180, 220, 0)),
-  row("BLUE_SHORE_ASM", "SHORE_MISSILE_BATTERY", "岸防导弹阵地", "shoreMissile", "BLUE", "SHORE", 2, "NSM阵地", cp(160, 100, 0))
+  row("BLUE_SHORE_ASM", "SHORE_MISSILE_BATTERY", "岸防导弹阵地", "shoreMissile", "BLUE", "SHORE", 2, "NSM阵地", cp(160, 100, 0)),
+  // —— 信息作战（制信息权专用编制）——
+  row("RED_EW_SHIP", "EW_ELINT_SHIP", "电子侦察船", "elintShip", "RED", "INFORMATION", 2, "815A型", cp(160, 20, 18, undefined, { sensorSectorHalfDeg: 140, signatureFactor: 0.95 })),
+  row("BLUE_EW_SHIP", "EW_ELINT_SHIP", "电子侦察船", "elintShip", "BLUE", "INFORMATION", 2, "胜利级", cp(170, 15, 19, undefined, { sensorSectorHalfDeg: 140, signatureFactor: 0.95 })),
+  row("RED_SHORE_RADAR", "SHORE_RADAR", "岸基雷达站", "shoreRadar", "RED", "INFORMATION", 2, "远程对海警戒雷达", cp(260, 0, 0, undefined, { sensorSectorHalfDeg: 180, signatureFactor: 1 })),
+  row("BLUE_SHORE_RADAR", "SHORE_RADAR", "岸基雷达站", "shoreRadar", "BLUE", "INFORMATION", 2, "AN/TPS-80", cp(240, 0, 0, undefined, { sensorSectorHalfDeg: 180, signatureFactor: 1 })),
+  row("RED_SONAR_ARRAY", "SONAR_ARRAY", "水下声呐阵", "sonarArray", "RED", "INFORMATION", 3, "固定阵元区", cp(55, 0, 0, 200, { sensorSectorHalfDeg: 180, signatureFactor: 1 })),
+  row("BLUE_SONAR_ARRAY", "SONAR_ARRAY", "水下声呐阵", "sonarArray", "BLUE", "INFORMATION", 3, "SOSUS 区段", cp(60, 0, 0, 200, { sensorSectorHalfDeg: 180, signatureFactor: 1 })),
+  row("RED_UAV_LONG", "UAV_LONG_ENDURANCE", "长航时侦察无人机", "uavLong", "RED", "INFORMATION", 4, "无侦-10", cp(160, 0, 280, undefined, { sensorSectorHalfDeg: 70, signatureFactor: 0.88 })),
+  row("BLUE_UAV_LONG", "UAV_LONG_ENDURANCE", "长航时侦察无人机", "uavLong", "BLUE", "INFORMATION", 4, "RQ-4 衍生型", cp(150, 0, 270, undefined, { sensorSectorHalfDeg: 70, signatureFactor: 0.88 }))
 ];
 
-const CATEGORY_ORDER: ForceCategory[] = ["SURFACE", "AIR", "UNDERWATER", "SHORE"];
+const CATEGORY_ORDER: ForceCategory[] = ["SURFACE", "AIR", "UNDERWATER", "SHORE", "INFORMATION"];
 
 export function templatesForCamp(camp: ForceCamp): ForceTemplate[] {
   return FORCE_TEMPLATES.filter((t) => t.camp === camp).sort(
@@ -77,7 +88,8 @@ export function templatesByCategory(camp: ForceCamp): Record<ForceCategory, Forc
     SURFACE: [],
     AIR: [],
     UNDERWATER: [],
-    SHORE: []
+    SHORE: [],
+    INFORMATION: []
   };
   templatesForCamp(camp).forEach((t) => {
     out[t.category].push(t);

@@ -3,7 +3,8 @@ import { Button, Card, Space, Spin, Tooltip, message } from "antd";
 import { BorderOutlined, FullscreenOutlined } from "@ant-design/icons";
 import Map from "ol/Map";
 import View from "ol/View";
-import { createBasemapTileLayer } from "../rebuild/map/basemapLayer";
+import TileLayer from "ol/layer/Tile";
+import XYZ from "ol/source/XYZ";
 import VectorLayer from "ol/layer/Vector";
 import VectorSource from "ol/source/Vector";
 import Feature from "ol/Feature";
@@ -20,7 +21,7 @@ function getUnitColor(side, selected = false) {
 }
 
 /**
- * 仿真战场主视图：与指挥端相同的栅格底图（CARTO Voyager 彩色）与矢量层逻辑，只读展示。
+ * 仿真战场主视图：与指挥端相同的 OSM 底图与矢量层逻辑，只读展示。
  * units / objectives 与想定或 /v2/simulation/units 联动；planRoutes 为方案预览折线。
  */
 export default function SimulationBattleMap({
@@ -41,7 +42,9 @@ export default function SimulationBattleMap({
   useEffect(() => {
     if (!rootRef.current || mapRef.current) return;
     try {
-      const base = createBasemapTileLayer();
+      const base = new TileLayer({
+        source: new XYZ({ url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png" })
+      });
       unitLayerRef.current = new VectorLayer({ source: new VectorSource() });
       objLayerRef.current = new VectorLayer({ source: new VectorSource() });
       routeLayerRef.current = new VectorLayer({ source: new VectorSource() });

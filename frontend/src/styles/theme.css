@@ -534,15 +534,8 @@ button:disabled {
   flex: 1 1 auto;
   min-width: 0;
   min-height: 420px;
-  height: min(72vh, 820px);
   display: flex;
   flex-direction: column;
-  align-self: stretch;
-}
-
-.commander-main-map > .ant-card.commander-map-card {
-  height: 100%;
-  min-height: 400px;
 }
 
 .commander-panel-card {

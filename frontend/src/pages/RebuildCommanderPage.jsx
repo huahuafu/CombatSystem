@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Button,
@@ -26,17 +26,17 @@ import {
   FlagOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
-  RocketOutlined,
-  RollbackOutlined,
-  RedoOutlined
+  RocketOutlined
 } from "@ant-design/icons";
 import { DndProvider } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
 import MapWorkbench from "../rebuild/map/MapWorkbench";
-import { PaletteUnit, UNIT_TEMPLATES } from "../rebuild/map/DeployPalette";
-import { OBJECTIVE_TYPE_OPTIONS, UNIT_TYPE_LABELS, addUnitToList, countDeployedByType } from "../rebuild/map/deployMeta";
+import ForceDeployPalette from "../rebuild/map/ForceDeployPalette";
+import { OBJECTIVE_TYPE_OPTIONS } from "../rebuild/map/deployMeta";
+import { getUnitTypeLabel } from "../rebuild/force/forceCatalog";
 import { httpJson } from "../lib/api";
 import { useSimulationStore } from "../store/simulationStore";
+import { useDeploymentStore } from "../store/deploymentStore";
 import { EnvironmentOutlined, DeleteOutlined, SaveOutlined } from "@ant-design/icons";
 
 const { Text, Paragraph } = Typography;
@@ -66,8 +66,9 @@ export default function RebuildCommanderPage() {
   const setCommanderSide = useSimulationStore((s) => s.setCommanderSide);
   const commanderRole = useSimulationStore((s) => s.commanderRole);
   const setCommanderRole = useSimulationStore((s) => s.setCommanderRole);
+  const deployedUnits = useDeploymentStore((s) => s.deployedUnits);
+  const clearAllUnits = useDeploymentStore((s) => s.clearAll);
   const [goal, setGoal] = useState("以关键据点为核心组织攻防推演");
-  const [units, setUnits] = useState([]);
   const [objectives, setObjectives] = useState([]);
   const [scenarioName, setScenarioName] = useState("OpenLayers重构想定");
   const [validation, setValidation] = useState(null);
@@ -76,55 +77,7 @@ export default function RebuildCommanderPage() {
   const [rightCollapsed, setRightCollapsed] = useState(false);
   const [deployTabKey, setDeployTabKey] = useState("units");
   const [pendingObjective, setPendingObjective] = useState({ name: "", type: "DEFEND" });
-  const [undoStack, setUndoStack] = useState([]);
-  const [redoStack, setRedoStack] = useState([]);
   const mapRef = useRef(null);
-
-  const handleWillMutate = useCallback(() => {
-    setUndoStack((s) => [...s.slice(-45), { units, objectives }]);
-    setRedoStack([]);
-  }, [units, objectives]);
-
-  const undo = useCallback(() => {
-    if (!undoStack.length) {
-      message.info("没有可撤销的操作");
-      return;
-    }
-    const snap = undoStack[undoStack.length - 1];
-    setRedoStack((r) => [...r, { units, objectives }]);
-    setUndoStack((s) => s.slice(0, -1));
-    setUnits(snap.units);
-    setObjectives(snap.objectives);
-    message.success("已撤销");
-  }, [undoStack, units, objectives]);
-
-  const redo = useCallback(() => {
-    if (!redoStack.length) {
-      message.info("没有可重做");
-      return;
-    }
-    const snap = redoStack[redoStack.length - 1];
-    setUndoStack((s) => [...s, { units, objectives }]);
-    setRedoStack((r) => r.slice(0, -1));
-    setUnits(snap.units);
-    setObjectives(snap.objectives);
-    message.success("已重做");
-  }, [redoStack, units, objectives]);
-
-  useEffect(() => {
-    const onKey = (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && !e.shiftKey) {
-        e.preventDefault();
-        undo();
-      }
-      if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === "y" || (e.key.toLowerCase() === "z" && e.shiftKey))) {
-        e.preventDefault();
-        redo();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [undo, redo]);
 
   useEffect(() => {
     loadInitialData();
@@ -214,31 +167,37 @@ export default function RebuildCommanderPage() {
   }
 
   async function validateDeployment() {
-    const payload = { name: scenarioName, goal, units, objectives };
-    const result = await httpJson("/combat/v3/commander/deployment/validate", {
-      method: "POST",
-      body: JSON.stringify(payload)
-    });
-    setValidation(result);
-    if (result?.valid) {
-      message.success("部署校验通过");
-    } else {
-      message.warning("部署校验未通过，请查看右侧说明");
+    const payload = { name: scenarioName, goal, units: deployedUnits, objectives };
+    try {
+      const result = await httpJson("/combat/v3/commander/deployment/validate", {
+        method: "POST",
+        body: JSON.stringify(payload)
+      });
+      setValidation(result);
+      if (result?.valid) {
+        message.success("部署校验通过");
+      } else {
+        message.warning("部署校验未通过，请查看右侧说明");
+      }
+      return result;
+    } catch (e) {
+      message.error(e?.message || "部署校验请求失败");
+      setValidation(null);
+      return null;
     }
-    return result;
   }
 
   async function createAndActivateScenario() {
     const check = await validateDeployment();
     if (!check?.valid) return;
-    const centerLatitude = units[0]?.latitude || objectives[0]?.latitude || 22.8;
-    const centerLongitude = units[0]?.longitude || objectives[0]?.longitude || 121.5;
+    const centerLatitude = deployedUnits[0]?.latitude || objectives[0]?.latitude || 22.8;
+    const centerLongitude = deployedUnits[0]?.longitude || objectives[0]?.longitude || 121.5;
     const payload = {
       name: scenarioName,
       goal,
       centerLatitude,
       centerLongitude,
-      units,
+      units: deployedUnits,
       objectives,
       maxRounds: 50
     };
@@ -311,14 +270,13 @@ export default function RebuildCommanderPage() {
     }
   }
 
-  const deployedByType = useMemo(() => countDeployedByType(units), [units]);
   const sideCount = useMemo(() => {
-    const red = units.filter((u) => u.side === "RED").length;
-    const blue = units.filter((u) => u.side === "BLUE").length;
+    const red = deployedUnits.filter((u) => u.side === "RED").length;
+    const blue = deployedUnits.filter((u) => u.side === "BLUE").length;
     return { red, blue };
-  }, [units]);
-  const deployProgress = Math.min(100, Math.round(((units.length + objectives.length) / 12) * 100));
-  const unitSummary = useMemo(() => units.map((x, i) => `${i + 1}. ${x.name}`).slice(0, 6), [units]);
+  }, [deployedUnits]);
+  const deployProgress = Math.min(100, Math.round(((deployedUnits.length + objectives.length) / 12) * 100));
+  const unitSummary = useMemo(() => deployedUnits.map((x, i) => `${i + 1}. ${x.name}`).slice(0, 6), [deployedUnits]);
 
   const validationStatus = useMemo(() => {
     if (validation == null) return { key: "pending", label: "待校验", color: "#94a3b8", icon: ExclamationCircleOutlined };
@@ -332,8 +290,8 @@ export default function RebuildCommanderPage() {
     if (!objectives.length) {
       return { strong: "缺少战役目标", rest: "：请在右侧「目标标绘」填写名称并在地图上点击落点，或从校验异常项跳转。" };
     }
-    if (!units.length) {
-      return { strong: "尚未部署兵力", rest: "：从右侧兵种卡片拖入地图，或双击快速部署。" };
+    if (!deployedUnits.length) {
+      return { strong: "尚未部署兵力", rest: "：从右侧兵种卡片拖入地图，或双击地图快捷部署。" };
     }
     if (!activeScenarioId) {
       return { strong: "未锁定激活想定", rest: "：在左侧想定列表选择并点击「激活」，或新建想定。" };
@@ -345,7 +303,7 @@ export default function RebuildCommanderPage() {
       return { strong: "部署就绪", rest: "：可创建并激活想定，或进入顶部「仿真运行」继续链路。" };
     }
     return { strong: "建议执行校验", rest: "：点击右侧「执行部署校验」确认当前配置可进入下一阶段。" };
-  }, [objectives.length, units.length, activeScenarioId, validation]);
+  }, [objectives.length, deployedUnits.length, activeScenarioId, validation]);
 
   function jumpToAction(action) {
     if (!action) return;
@@ -358,25 +316,13 @@ export default function RebuildCommanderPage() {
     }
   }
 
-  function deployUnitTemplate(unitType) {
-    const tpl = UNIT_TEMPLATES.find((t) => t.type === unitType);
-    const deployed = units.filter((u) => u.type === unitType).length;
-    if (tpl && deployed >= tpl.total) {
-      message.error(`${UNIT_TYPE_LABELS[unitType] || unitType} 已达编制上限`);
-      return;
-    }
-    handleWillMutate();
-    setUnits(addUnitToList(units, commanderSide, unitType));
-    message.success(`${UNIT_TYPE_LABELS[unitType] || unitType} 已加入战场`);
-  }
-
   function clearAllDeployment() {
-    if (!units.length && !objectives.length) {
+    const hasUnits = useDeploymentStore.getState().deployedUnits.length > 0;
+    if (!hasUnits && !objectives.length) {
       message.info("当前无部署可清空");
       return;
     }
-    handleWillMutate();
-    setUnits([]);
+    if (hasUnits) clearAllUnits();
     setObjectives([]);
     message.success("已清空部署");
   }
@@ -519,7 +465,7 @@ export default function RebuildCommanderPage() {
                       block
                       size="small"
                       onClick={createAndActivateScenario}
-                      disabled={!units.length || !objectives.length}
+                      disabled={!deployedUnits.length || !objectives.length}
                     >
                       按当前部署创建并激活
                     </Button>
@@ -564,11 +510,8 @@ export default function RebuildCommanderPage() {
             <MapWorkbench
               ref={mapRef}
               commanderSide={commanderSide}
-              units={units}
               objectives={objectives}
-              onUnitsChange={setUnits}
               onObjectivesChange={setObjectives}
-              onWillMutate={handleWillMutate}
               pendingObjective={pendingObjective}
               onPendingObjectiveChange={setPendingObjective}
             />
@@ -599,7 +542,7 @@ export default function RebuildCommanderPage() {
                       <RocketOutlined />
                       <div>
                         <div className="metric-label">已部署单位</div>
-                        <div className="metric-value">{units.length}</div>
+                        <div className="metric-value">{deployedUnits.length}</div>
                       </div>
                     </div>
                     <div className="commander-metric">
@@ -657,8 +600,8 @@ export default function RebuildCommanderPage() {
                   <Divider style={{ margin: "12px 0" }} />
                   <div className="kv text-sm">
                     <span>兵力匹配度</span>
-                    <strong className={units.length >= objectives.length ? "text-emerald-400" : "text-amber-400"}>
-                      {units.length >= objectives.length ? "满足" : "不足"}
+                    <strong className={deployedUnits.length >= objectives.length ? "text-emerald-400" : "text-amber-400"}>
+                      {deployedUnits.length >= objectives.length ? "满足" : "不足"}
                     </strong>
                   </div>
                   <div className="kv text-sm">
@@ -679,26 +622,19 @@ export default function RebuildCommanderPage() {
                       label: "兵力部署",
                       children: (
                         <Card size="small" bordered={false} className="commander-panel-card">
-                          <Space wrap>
-                            {UNIT_TEMPLATES.map((u) => {
-                              const remain = Math.max(0, u.total - (deployedByType[u.type] || 0));
-                              return (
-                                <PaletteUnit
-                                  key={u.type}
-                                  template={u}
-                                  remain={remain}
-                                  onQuickDeploy={() => deployUnitTemplate(u.type)}
-                                />
-                              );
-                            })}
-                          </Space>
+                          <ForceDeployPalette
+                            commanderSide={commanderSide}
+                            deployedUnits={deployedUnits}
+                            onQuickDeployAtCenter={(type, camp) => {
+                              const c = mapRef.current?.getCenterLonLat?.();
+                              const lon = c?.[0] ?? 121.5;
+                              const lat = c?.[1] ?? 22.8;
+                              const ok = useDeploymentStore.getState().deployAt(type, camp, lon, lat, "快捷部署");
+                              if (ok) message.success(`${getUnitTypeLabel(type)} 已在视图中心部署`);
+                              else message.warning(`${getUnitTypeLabel(type)} 无法部署（编制已满或类型不匹配）`);
+                            }}
+                          />
                           <Space style={{ marginTop: 10 }} wrap>
-                            <Button size="small" icon={<RollbackOutlined />} onClick={undo}>
-                              撤销
-                            </Button>
-                            <Button size="small" icon={<RedoOutlined />} onClick={redo}>
-                              重做
-                            </Button>
                             <Popconfirm title="清空所有兵力与目标？" onConfirm={clearAllDeployment}>
                               <Button size="small" danger icon={<DeleteOutlined />}>
                                 一键清空
@@ -706,10 +642,10 @@ export default function RebuildCommanderPage() {
                             </Popconfirm>
                           </Space>
                           <div className="muted" style={{ marginTop: 8, fontSize: 12 }}>
-                            拖入中央地图部署；Ctrl+Z / Ctrl+Y 撤销重做。
+                            兵力撤销/重做请使用地图底部按钮或 Ctrl+Z / Ctrl+Y（输入框内除外）。
                           </div>
-                          {!units.length ? (
-                            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="拖拽或双击部署" style={{ marginTop: 12 }} />
+                          {!deployedUnits.length ? (
+                            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="拖拽至地图或双击地图部署" style={{ marginTop: 12 }} />
                           ) : null}
                         </Card>
                       )
@@ -757,7 +693,7 @@ export default function RebuildCommanderPage() {
                         <Card size="small" bordered={false} className="commander-panel-card">
                           <div className="kv">
                             <span>已部署单位</span>
-                            <strong>{units.length}</strong>
+                            <strong>{deployedUnits.length}</strong>
                           </div>
                           <div className="kv">
                             <span>已部署目标</span>

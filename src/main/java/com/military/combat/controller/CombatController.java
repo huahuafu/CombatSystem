@@ -10,6 +10,7 @@ import com.military.combat.simulation.SimulationFacadeService;
 import com.military.combat.simulation.SimulationState;
 import com.military.combat.util.NavalDomainValidator;
 import com.military.combat.controller.dto.FullScenarioCreateRequest;
+import com.military.combat.controller.dto.ScenarioDraftMapper;
 import com.military.combat.controller.dto.ScenarioBasicUpdateRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -272,12 +273,12 @@ public class CombatController {
         sd.setRedSideName("红方");
         sd.setBlueSideName("蓝方");
 
-        // 用户布置：单位/目标清单（可为空）
+        // 用户布置：单位/目标清单（可为空；API 草稿 → 持久化实体）
         if (req.getUnits() != null) {
-            sd.setUnits(req.getUnits());
+            sd.setUnits(ScenarioDraftMapper.mapUnits(req.getUnits()));
         }
         if (req.getObjectives() != null) {
-            sd.setObjectives(req.getObjectives());
+            sd.setObjectives(ScenarioDraftMapper.mapObjectives(req.getObjectives()));
         }
 
         // 若没有任何目标，补一个默认海上目标，避免空想定无法评估

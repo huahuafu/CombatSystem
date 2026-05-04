@@ -1,7 +1,5 @@
 package com.military.combat.controller.dto;
 
-import com.military.combat.entity.CombatObjective;
-import com.military.combat.entity.CombatUnit;
 import lombok.Data;
 
 import java.util.List;
@@ -19,10 +17,10 @@ public class FullScenarioCreateRequest {
     /** 最大回合数（可选） */
     private Integer maxRounds;
 
-    /** 新建想定时一并写入的兵力部署（草稿清单） */
-    private List<CombatUnit> units;
+    /** 新建想定时一并写入的兵力部署（API 草稿，非 {@link com.military.combat.entity.CombatUnit} 直传） */
+    private List<DeploymentUnitDraft> units;
 
-    /** 新建想定时一并写入的作战目标（草稿清单） */
-    private List<CombatObjective> objectives;
+    /** 新建想定时一并写入的作战目标（API 草稿） */
+    private List<DeploymentObjectiveDraft> objectives;
 }
 

@@ -1,8 +1,8 @@
 package com.military.combat.controller.v3;
 
+import com.military.combat.controller.dto.DeploymentObjectiveDraft;
+import com.military.combat.controller.dto.DeploymentUnitDraft;
 import com.military.combat.controller.dto.FullScenarioCreateRequest;
-import com.military.combat.entity.CombatObjective;
-import com.military.combat.entity.CombatUnit;
 import com.military.combat.service.CommanderService;
 import com.military.combat.simulation.commander.CommanderExecuteRequest;
 import com.military.combat.simulation.commander.CommanderExecuteResponse;
@@ -72,8 +72,8 @@ public class CommanderController {
     public Map<String, Object> validateDeployment(@RequestBody(required = false) FullScenarioCreateRequest body) {
         FullScenarioCreateRequest req = body == null ? new FullScenarioCreateRequest() : body;
         List<String> issues = new ArrayList<>();
-        List<CombatUnit> units = req.getUnits() == null ? List.of() : req.getUnits();
-        List<CombatObjective> objectives = req.getObjectives() == null ? List.of() : req.getObjectives();
+        List<DeploymentUnitDraft> units = req.getUnits() == null ? List.of() : req.getUnits();
+        List<DeploymentObjectiveDraft> objectives = req.getObjectives() == null ? List.of() : req.getObjectives();
         if (units.isEmpty()) {
             issues.add("至少部署一个作战单位");
         }
@@ -81,7 +81,7 @@ public class CommanderController {
             issues.add("至少设置一个作战目标");
         }
         for (int i = 0; i < units.size(); i++) {
-            CombatUnit u = units.get(i);
+            DeploymentUnitDraft u = units.get(i);
             if (u == null || u.getLatitude() == null || u.getLongitude() == null) {
                 issues.add("单位#" + (i + 1) + " 缺少坐标");
                 continue;
@@ -94,7 +94,7 @@ public class CommanderController {
             }
         }
         for (int i = 0; i < objectives.size(); i++) {
-            CombatObjective o = objectives.get(i);
+            DeploymentObjectiveDraft o = objectives.get(i);
             if (o == null || o.getLatitude() == null || o.getLongitude() == null) {
                 issues.add("目标#" + (i + 1) + " 缺少坐标");
                 continue;

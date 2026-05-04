@@ -1,7 +1,6 @@
 {
   "name": "combat-system",
   "private": true,
-  "description": "Java 后端 + frontend/ 下的 Vite 前端；在仓库根目录执行 npm run build 会构建前端并输出到 src/main/resources/static/app",
   "scripts": {
     "build": "npm run build --prefix frontend",
     "dev": "npm run dev --prefix frontend",

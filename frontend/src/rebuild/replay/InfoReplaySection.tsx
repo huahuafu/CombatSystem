@@ -3,13 +3,25 @@ import { Card, Col, Row, Table, Tag, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import ReactECharts from "echarts-for-react";
 import { useInfoStore } from "../../store/infoStore";
-import type { InfoReplaySlice } from "../info/infoTypes";
+import type { InfoReplaySlice, RoundInfoDigest } from "../info/infoTypes";
 
 const { Text } = Typography;
 
+function digestToReplaySlice(r: RoundInfoDigest): InfoReplaySlice {
+  return {
+    round: r.round,
+    detectionCount: r.detections.length,
+    jamEventsNote: `探测效率×${r.ewSummary.avgDetectionEfficiency.toFixed(2)} · 干扰压制圈内单位 ${r.ewSummary.unitsInEnemyJam}`,
+    datalinkUpRatio: r.datalinkIntegrity,
+    infoAdvantage: r.infoAdvantage
+  };
+}
+
 export default function InfoReplaySection() {
-  const slices = useInfoStore((s) => s.getReplaySlices());
+  /** 必须订阅稳定引用；勿在 selector 中调用 getReplaySlices()，否则每次返回新数组会触发无限重渲染（React #185）。 */
+  const roundArchive = useInfoStore((s) => s.roundArchive);
   const boundScenarioId = useInfoStore((s) => s.boundScenarioId);
+  const slices = useMemo(() => roundArchive.map(digestToReplaySlice), [roundArchive]);
 
   const chartOption = useMemo(
     () => ({

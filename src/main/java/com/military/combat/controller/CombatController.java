@@ -63,6 +63,9 @@ public class CombatController {
     private ScenarioActivationService scenarioActivationService;
 
     @Autowired
+    private DemoScenarioSeedService demoScenarioSeedService;
+
+    @Autowired
     private InteractionLegacyMigrationService interactionLegacyMigrationService;
 
     @Autowired
@@ -324,6 +327,19 @@ public class CombatController {
         Map<String, Object> out = new java.util.HashMap<>();
         out.put("scenario", saved);
         out.put("activeScenarioId", saved.getId());
+        out.put("mainLine", battlelineService.getMainLineForActiveScenario());
+        return out;
+    }
+
+    /**
+     * 一键载入固定 ID 的测试想定（红方驱逐舰 + 蓝方护卫舰 + 区域控制目标），已存在则重置到初始并激活。
+     */
+    @PostMapping("/scenario-data/seed-demo")
+    public Map<String, Object> seedDemoScenario() {
+        ScenarioData saved = demoScenarioSeedService.ensureDemoScenario();
+        Map<String, Object> out = new java.util.HashMap<>();
+        out.put("scenario", saved);
+        out.put("activeScenarioId", scenarioService.getActiveScenarioId());
         out.put("mainLine", battlelineService.getMainLineForActiveScenario());
         return out;
     }

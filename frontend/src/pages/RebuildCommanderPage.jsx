@@ -179,6 +179,24 @@ export default function RebuildCommanderPage() {
     await loadInitialData();
   }
 
+  async function seedDemoScenario() {
+    try {
+      const data = await httpJson("/combat/scenario-data/seed-demo", { method: "POST" });
+      const id = data?.activeScenarioId || "";
+      setActiveScenarioId(id);
+      setSelectedScenarioId(id);
+      const scenario = data?.scenario;
+      if (scenario?.name) setScenarioName(scenario.name);
+      setScenarioDescription(scenario?.description || "");
+      replaceAllNoHistory(mapScenarioUnitsToDeployed(scenario?.units));
+      setObjectives(Array.isArray(scenario?.objectives) ? scenario.objectives : []);
+      await loadInitialData();
+      message.success("已载入测试想定并激活（红蓝兵力、信息节点与区域控制目标）");
+    } catch (e) {
+      message.error(e?.message || "载入测试想定失败");
+    }
+  }
+
   async function createEmptyScenario() {
     const name = scenarioName.trim() || `新建想定-${new Date().toLocaleString("zh-CN", { hour12: false })}`;
     try {
@@ -502,6 +520,9 @@ export default function RebuildCommanderPage() {
                     <Space wrap>
                       <Button size="small" onClick={loadInitialData}>
                         刷新
+                      </Button>
+                      <Button size="small" type="dashed" onClick={seedDemoScenario}>
+                        载入测试想定
                       </Button>
                       <Button size="small" onClick={createEmptyScenario}>
                         新建

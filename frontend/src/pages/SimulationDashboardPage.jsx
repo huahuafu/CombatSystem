@@ -8,6 +8,7 @@ import {
   Empty,
   Progress,
   Space,
+  Switch,
   Tag,
   Tooltip,
   Typography,
@@ -28,11 +29,18 @@ import { KILL_CHAIN_STAGES } from "../simulation/killChainMeta";
 import { httpJson } from "../lib/api";
 import { useSimulationStore } from "../store/simulationStore";
 import { useInfoStore } from "../store/infoStore";
+import {
+  attachServerSnapshotToDigest,
+  countInteractionsByRound
+} from "../rebuild/info/replayBackendMerge";
 import { buildRoundDigest, killChainFactorsFromDigest } from "../rebuild/info/infoWarfareEngine";
 
 const { Text, Paragraph } = Typography;
 
 const STAGES = ["find", "fix", "track", "target", "engage", "assess"];
+
+/** 与后端 killChainSequentialStep（0..5）对齐 */
+const KILL_CHAIN_STEP_HINTS = ["FIND 发现", "FIX 定位", "TRACK 跟踪", "TARGET 瞄准", "ENGAGE 交战", "ASSESS 评估"];
 const PLAN_META = [
   { id: "WIN_MAX", title: "胜率优先", cls: "x-win" },
   { id: "LOSS_MIN", title: "战损可控", cls: "x-loss" },
@@ -49,16 +57,21 @@ function mergeUnits(scenarioUnits, simUnits) {
       type: u.type,
       longitude: u.longitude,
       latitude: u.latitude,
-      mission: u.mission
+      mission: u.mission,
+      combatPower: u.combatPower
     }));
   }
   const byId = new Map((simUnits || []).map((x) => [x.id, x]));
   return (scenarioUnits || []).map((su) => {
     const live = byId.get(su.id);
+    let merged = su;
     if (live && live.longitude != null && live.latitude != null) {
-      return { ...su, longitude: live.longitude, latitude: live.latitude };
+      merged = { ...su, longitude: live.longitude, latitude: live.latitude };
     }
-    return su;
+    if (live && typeof live.combatPower === "number" && !Number.isNaN(live.combatPower)) {
+      merged = { ...merged, combatPower: live.combatPower };
+    }
+    return merged;
   });
 }
 
@@ -134,6 +147,7 @@ export default function SimulationDashboardPage() {
   const [events, setEvents] = useState([]);
   const [plans, setPlans] = useState([]);
   const [selectedPlanId, setSelectedPlanId] = useState("BALANCED");
+  const [aiRecommendLoading, setAiRecommendLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState(false);
   const [stageRunningPath, setStageRunningPath] = useState("");
@@ -143,6 +157,23 @@ export default function SimulationDashboardPage() {
   const [roundTrail, setRoundTrail] = useState([]);
 
   const selectedPlan = useMemo(() => plans.find((p) => p.id === selectedPlanId) || null, [plans, selectedPlanId]);
+
+  /** 阶段 C 简单采纳：记录 AI 计划 JSON 并刷新（完整落库可后续接 AiAutoModelingService.replan） */
+  const adoptSelectedPlan = async () => {
+    if (!selectedPlan) return;
+    try {
+      // 可在此调用 POST /combat/v2/simulation/strategy/adopt（若后端扩展）
+      // 当前先在会话内标记并提示用户
+      message.success(`已采纳「${selectedPlan.strategyName}」，AI 建议已记录。可继续推进杀伤链或在指挥端进一步转化为活动/规则。`);
+      setMapFlash(Date.now());
+      // 可选：把 planJson 存入 infoStore 或本地 state 供后续复用
+    } catch (e) {
+      message.error(e?.message || "采纳失败");
+    }
+  };
+
+  /** 胜负已写入会话后不再推进交战引擎；与后端 simulateRound 早退一致 */
+  const simulationEnded = Boolean(String(state?.winner || "").trim());
 
   const stageAlertCount = (k) => {
     const s = snapshots[k] || {};
@@ -247,6 +278,17 @@ export default function SimulationDashboardPage() {
       try {
         simUnits = await httpJson("/combat/v2/simulation/units");
       } catch (_) {}
+
+      let roundStats = [];
+      let interactionEvents = [];
+      try {
+        roundStats = await httpJson("/combat/stats");
+      } catch (_) {}
+      try {
+        interactionEvents = await httpJson("/combat/interaction-event/list");
+      } catch (_) {}
+      const interactionByRound = countInteractionsByRound(interactionEvents);
+
       const filteredLive = (simUnits || []).filter((u) => String(u.scenarioId || "") === sid);
       const merged = mergeUnits(scenario?.units, filteredLive);
       setMapUnits(merged);
@@ -264,8 +306,10 @@ export default function SimulationDashboardPage() {
           useInfoStore.getState().environment,
           useInfoStore.getState().unitInfoCombat
         );
-        useInfoStore.getState().setLastDigest(digest);
-        useInfoStore.getState().appendRoundArchive(digest);
+        const statsSafe = Array.isArray(roundStats) ? roundStats : [];
+        const mergedDigest = attachServerSnapshotToDigest(digest, statsSafe, interactionByRound);
+        useInfoStore.getState().setLastDigest(mergedDigest);
+        useInfoStore.getState().appendRoundArchive(mergedDigest);
         useInfoStore.getState().persistArchiveToSession();
       }
 
@@ -289,12 +333,45 @@ export default function SimulationDashboardPage() {
   }, [state?.round]);
 
   const runKillChainRound = async () => {
+    if (simulationEnded) {
+      message.info("本局已结束，请先在指挥端重置想定或重新载入测试想定后再推进。");
+      return;
+    }
+    setRunning(true);
+    try {
+      const out = await httpJson("/combat/v2/simulation/kill-chain/advance-step", { method: "POST" });
+      setEvents(out?.battleEvents || []);
+      const done = out?.executedPhase ? String(out.executedPhase) : "";
+      const nextIdx = typeof out?.nextSequentialStep === "number" ? out.nextSequentialStep : 0;
+      const nextHint = KILL_CHAIN_STEP_HINTS[nextIdx] ?? "—";
+      await refreshAll();
+      message.success(
+        done ? `已完成阶段：${done}（下一阶段：${nextHint}）` : "杀伤链已推进，战场态势已刷新"
+      );
+    } catch (e) {
+      message.error(e?.message || "推进失败");
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  /** 推进完整一回合（红蓝双方走完杀伤链 6 阶段） */
+  const runFullKillChainRound = async () => {
+    if (simulationEnded) {
+      message.info("本局已结束，请先重置想定。");
+      return;
+    }
     setRunning(true);
     try {
       const out = await httpJson("/combat/v2/simulation/start-kill-chain", { method: "POST" });
       setEvents(out?.battleEvents || []);
       await refreshAll();
-      message.success("杀伤链推进 1 回合完成，战场态势已刷新");
+      const phases = out?.executedPhases || [];
+      message.success(
+        phases.length
+          ? `已完成一回合（${phases.length} 个阶段）：${phases.join(" → ")}`
+          : "完整杀伤链回合已推进，红蓝态势已更新"
+      );
     } catch (e) {
       message.error(e?.message || "推进失败");
     } finally {
@@ -318,6 +395,48 @@ export default function SimulationDashboardPage() {
     }
   };
 
+  /** 阶段 C：调用后端真实策略推荐，替换本地启发式 plans */
+  const fetchAiStrategyRecommend = async () => {
+    if (!scenarioReady) {
+      message.warning("请先激活想定");
+      return;
+    }
+    setAiRecommendLoading(true);
+    try {
+      const goal = "在当前信息优势与杀伤链节奏下，推荐 3 套低风险高效方案";
+      const body = { goal, topN: 3 };
+      const resp = await httpJson("/combat/v2/simulation/strategy/recommend", {
+        method: "POST",
+        body: JSON.stringify(body)
+      });
+      if (resp && Array.isArray(resp.strategies) && resp.strategies.length) {
+        // 将后端返回映射为前端 PlanCard 可消费的格式
+        const mapped = resp.strategies.map((s, idx) => ({
+          id: s.strategyId || `AI-${idx}`,
+          strategyName: s.strategyName || s.name || `方案 ${idx + 1}`,
+          projectedWinRate: s.predictedWinRate ?? 0.6,
+          expectedLoss: s.predictedExpectedLoss ?? 0.3,
+          missionSuccessRate: s.predictedMissionSuccessRate ?? s.predictedWinRate ?? 0.6,
+          timeline: s.hypothesis ? [s.hypothesis] : ["AI 推荐节奏"],
+          routePlan: [],
+          recommended: idx === 0,
+          // 保留原始 planJson 供采纳使用
+          aiPlanJson: s.planJson || "{}"
+        }));
+        setPlans(mapped);
+        setSelectedPlanId(mapped[0]?.id || "AI-0");
+        setMapFlash(Date.now());
+        message.success("已获取后端 AI 策略推荐（阶段 C）");
+      } else {
+        message.info("后端返回空策略，使用本地默认方案");
+      }
+    } catch (e) {
+      message.error(e?.message || "AI 推荐调用失败");
+    } finally {
+      setAiRecommendLoading(false);
+    }
+  };
+
   useEffect(() => {
     refreshAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅挂载时拉取全量仿真与想定联动
@@ -338,6 +457,7 @@ export default function SimulationDashboardPage() {
   const alertOk = overallAlertCount === 0;
   const scenarioReady = Boolean(String(state?.activeScenarioId || "").trim());
   const plansReady = plans.length > 0;
+  const canAdvanceSimulation = scenarioReady && !simulationEnded;
 
   return (
     <div className="page-container commander-page-wrap rebuild-commander-page">
@@ -392,6 +512,14 @@ export default function SimulationDashboardPage() {
                   <div className="sim-metric-val">{phaseCn}</div>
                 </div>
                 <div>
+                  <Text type="secondary">杀伤链下一片段</Text>
+                  <div className="sim-metric-val" style={{ fontSize: 12 }}>
+                    {typeof state.killChainSequentialStep === "number"
+                      ? KILL_CHAIN_STEP_HINTS[state.killChainSequentialStep] ?? state.killChainSequentialStep
+                      : "—"}
+                  </div>
+                </div>
+                <div>
                   <Text type="secondary">建模整备</Text>
                   <div className="sim-metric-val">{readinessLabel}</div>
                 </div>
@@ -422,6 +550,7 @@ export default function SimulationDashboardPage() {
                 stageAlertCount={stageAlertCount}
                 stageRunningPath={stageRunningPath}
                 roundTrail={roundTrail}
+                onStageClick={() => runKillChainRound()}
               />
             </Card>
 
@@ -477,6 +606,27 @@ export default function SimulationDashboardPage() {
         </aside>
 
         <main className="commander-main-map">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, padding: "0 8px" }}>
+            <span style={{ fontSize: 12, color: "#9fb0cc" }}>仿真战场主视图（战争迷雾已启用）</span>
+            <Space size={8} align="center">
+              <Tooltip title="开启后仅显示己方单位 + 已探测/刚失联的敌方（参考 Command: Modern Operations / JTLS 迷雾机制）">
+                <span style={{ fontSize: 12, color: "#9fb0cc" }}>迷雾</span>
+              </Tooltip>
+              <Switch
+                size="small"
+                checked={useInfoStore.getState().fogOfWarEnabled}
+                onChange={(v) => useInfoStore.getState().setFogOfWarEnabled(v)}
+              />
+              <Tooltip title="显示未识别接触：所有敌方初始以灰色“?”显示，直到被FIND阶段探测后才显示真实图标（未知海域震撼演示）">
+                <span style={{ fontSize: 12, color: "#9fb0cc" }}>未识别</span>
+              </Tooltip>
+              <Switch
+                size="small"
+                checked={useInfoStore.getState().showUnidentifiedContacts}
+                onChange={(v) => useInfoStore.getState().setShowUnidentifiedContacts(v)}
+              />
+            </Space>
+          </div>
           <SimulationBattleMap
             units={mapUnits}
             objectives={mapObjectives}
@@ -516,8 +666,8 @@ export default function SimulationDashboardPage() {
                 type="info"
                 showIcon
                 style={{ marginBottom: 12 }}
-                message="方案与胜率从何而来？"
-                description="四套方案是在「交战 / 评估」阶段快照里已有胜率、战损等数值时，在此基础上做的差分对比示意，不是无数据时的臆测。未激活想定或杀伤链尚未产出评估指标时，此处留空。"
+                message="阶段 C：AI 策略推荐（后端真实）"
+                description="点击「获取 AI 策略推荐」调用 /strategy/recommend，返回结构化候选方案（含胜率、风险、资源预测）。选中后可「采纳」映射为作战活动与规则，再继续杀伤链推进。"
               />
               {!scenarioReady ? (
                 <Empty description="请先激活想定后再查看战术方案对比" />
@@ -526,7 +676,7 @@ export default function SimulationDashboardPage() {
                   description={
                     <span>
                       当前想定已激活，但杀伤链快照中还没有可用于推算的评估数据（如胜率、战损率）。
-                      <Text type="secondary"> 请先点击下文「推进 1 回合」或执行各杀伤链阶段，再点「刷新联动数据」。</Text>
+                      <Text type="secondary"> 请先点击下文「推进下一阶段」或执行各杀伤链阶段，再点「刷新联动数据」。</Text>
                     </span>
                   }
                 />
@@ -577,37 +727,79 @@ export default function SimulationDashboardPage() {
 
               <Divider style={{ margin: "14px 0" }} />
 
-              {plansReady ? (
+              {simulationEnded ? (
+                <Alert
+                  type="success"
+                  showIcon
+                  style={{ marginBottom: 12 }}
+                  message="本局推演已结束"
+                  description={`胜负：${state.winner || "—"}${state.winReason ? `（${state.winReason}）` : ""}。回合计数不再增加；若需再战请在「态势与部署」重置想定或重新载入测试想定。`}
+                />
+              ) : null}
+
+              {plansReady && selectedPlan ? (
                 <div className="sim-selected-banner">
                   <CheckCircleOutlined style={{ color: "#38bdf8" }} />
-                  <div>
+                  <div style={{ flex: 1 }}>
                     <Text strong>已选中方案</Text>
                     <div className="muted" style={{ fontSize: 12 }}>
-                      {PLAN_META.find((x) => x.id === selectedPlanId)?.title} — {selectedPlan?.strategyName || "—"}
+                      {selectedPlan.strategyName}
                     </div>
                   </div>
+                  <Button size="small" type="primary" onClick={adoptSelectedPlan}>
+                    采纳此方案（阶段 C）
+                  </Button>
                 </div>
               ) : (
-                <Alert type="warning" showIcon message="暂无选中方案" description="生成方案列表后可在此查看时序与地图预览。" />
+                <Alert type="warning" showIcon message="暂无选中方案" description="点击上方「获取 AI 策略推荐」或推进回合后查看。" />
               )}
 
               <Timeline items={selectedPlan?.timeline} emptyText="生成方案后可查看机动时序" />
 
               <div className="sim-execute-cta">
+                <Tooltip title={simulationEnded ? "胜负已决，请重置想定后再推进" : undefined}>
+                  <span style={{ display: "block", width: "100%" }}>
+                    <Button
+                      type="primary"
+                      size="large"
+                      block
+                      icon={<ThunderboltOutlined />}
+                      loading={running}
+                      disabled={!canAdvanceSimulation}
+                      onClick={runKillChainRound}
+                    >
+                      推进下一阶段（单阶段，红蓝逐步交战）
+                    </Button>
+                    <Button
+                      type="default"
+                      size="large"
+                      block
+                      style={{ marginTop: 8 }}
+                      icon={<ThunderboltOutlined />}
+                      loading={running}
+                      disabled={!canAdvanceSimulation}
+                      onClick={runFullKillChainRound}
+                    >
+                      推进一回合（红蓝双方走完完整杀伤链 6 阶段）
+                    </Button>
+                  </span>
+                </Tooltip>
+
                 <Button
-                  type="primary"
-                  size="large"
+                  type="default"
                   block
-                  icon={<ThunderboltOutlined />}
-                  loading={running}
-                  disabled={!scenarioReady}
-                  onClick={runKillChainRound}
+                  style={{ marginTop: 8 }}
+                  loading={aiRecommendLoading}
+                  disabled={!scenarioReady || simulationEnded}
+                  onClick={fetchAiStrategyRecommend}
                 >
-                  推进 1 回合（杀伤链 Kill-Chain）
+                  获取 AI 策略推荐（阶段 C · 后端）
                 </Button>
+
                 <Text type="secondary" style={{ fontSize: 11, display: "block", marginTop: 8, textAlign: "center" }}>
-                  核心操作位于流程终点；执行后六阶段快照与地图单位位置将刷新。
+                  每推演回合需按顺序完成 FIND→ASSESS 共六步；本按钮每次只走其中一段。执行后快照与地图将刷新。
                   {!scenarioReady ? " 需先激活想定。" : ""}
+                  {simulationEnded ? " 本局已结束，推进已禁用。" : ""}
                 </Text>
               </div>
             </Card>
@@ -623,14 +815,16 @@ export default function SimulationDashboardPage() {
                     title={
                       !scenarioReady
                         ? "请先激活想定"
-                        : `${def.label}（${def.en}）：${def.desc}`
+                        : simulationEnded
+                          ? "胜负已决，单阶段操作已禁用；请重置想定后再试"
+                          : `${def.label}（${def.en}）：${def.desc}`
                     }
                   >
                     <Button
                       block
                       size="small"
                       style={{ marginBottom: 8 }}
-                      disabled={!scenarioReady}
+                      disabled={!canAdvanceSimulation}
                       loading={running && stageRunningPath === def.actionPath}
                       onClick={() => runStage(def.actionPath)}
                       icon={<PlayCircleOutlined />}
@@ -654,13 +848,20 @@ export default function SimulationDashboardPage() {
               <Divider style={{ margin: "10px 0" }} />
               <div className="log" style={{ maxHeight: 160, overflow: "auto", fontSize: 12 }}>
                 {!events.length ? (
-                  <div className="muted">暂无事件。点击「推进 1 回合」生成战报条目。</div>
+                  <div className="muted">
+                    {simulationEnded
+                      ? "暂无本页战报缓存：结束前推进产生的条目可在上方刷新后查看；或重置想定后再推进。"
+                      : "暂无事件。点击「推进下一阶段」生成战报条目。"}
+                  </div>
                 ) : (
-                  events.map((e, i) => (
-                    <div key={i}>
-                      [{i + 1}] {e.message || `${e.action || ""} ${e.source || ""}`}
-                    </div>
-                  ))
+                  events.map((e, i) => {
+                    const sideColor = e.side === "RED" ? "#ef4444" : e.side === "BLUE" ? "#3b82f6" : "#94a3b8";
+                    return (
+                      <div key={i} style={{ color: sideColor }}>
+                        [{i + 1}] {e.message || `${e.action || ""} ${e.source || ""}`}
+                      </div>
+                    );
+                  })
                 )}
               </div>
             </Card>

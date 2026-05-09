@@ -58,7 +58,8 @@ public class SimulationFacadeService {
                 phase.getCurrentPhase() == null ? null : phase.getCurrentPhase().name(),
                 phase.getCurrentPhaseName(),
                 scenarioService.getWinner(),
-                scenarioService.getWinReason()
+                scenarioService.getWinReason(),
+                scenarioService.getKillChainSequentialStep()
         );
     }
 }

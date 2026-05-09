@@ -87,4 +87,6 @@ export interface DeployedUnit {
   mission?: string;
   modelLabel?: string;
   coreParams?: UnitCoreParams;
+  /** 仿真/想定兵力战力，用于战报层复盘（可选） */
+  combatPower?: number;
 }

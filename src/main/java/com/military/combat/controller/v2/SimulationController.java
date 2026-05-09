@@ -36,6 +36,11 @@ import com.military.combat.simulation.NavalOperationalMetricsService;
 import com.military.combat.simulation.NavalOperationalMetricsSnapshot;
 import com.military.combat.simulation.TacticalAssessment;
 import com.military.combat.simulation.TacticalAssessmentService;
+import com.military.combat.simulation.debrief.DebriefRequest;
+import com.military.combat.simulation.debrief.DebriefResponse;
+import com.military.combat.simulation.debrief.DebriefService;
+import com.military.combat.simulation.hybrid.AdoptStrategyRequest;
+import com.military.combat.simulation.hybrid.AdoptStrategyResponse;
 import com.military.combat.service.BatchSimulationService;
 import com.military.combat.service.AiAutoModelingService;
 import com.military.combat.simulation.batch.BatchSimulationRequest;
@@ -118,6 +123,9 @@ public class SimulationController {
     @Autowired
     private AiAutoModelingService aiAutoModelingService;
 
+    @Autowired
+    private DebriefService debriefService;
+
     @PostMapping("/start")
     public List<BattleEvent> startRound() {
         return killChainSimulationService.runOneRoundByKillChain().getBattleEvents();
@@ -126,6 +134,14 @@ public class SimulationController {
     @PostMapping("/start-kill-chain")
     public KillChainRunResult startRoundByKillChain() {
         return killChainSimulationService.runOneRoundByKillChain();
+    }
+
+    /**
+     * 杀伤链逐步推进：每次仅执行六阶段中的一段（FIND→…→ASSESS），完成评估后进入下一推演回合。
+     */
+    @PostMapping("/kill-chain/advance-step")
+    public KillChainRunResult advanceKillChainSequentialStep() {
+        return killChainSimulationService.advanceSequentialKillChainStep();
     }
 
     /**
@@ -271,6 +287,28 @@ public class SimulationController {
     @GetMapping("/adversarial-review")
     public AdversarialReview adversarialReview() {
         return adversarialReviewService.buildReview();
+    }
+
+    /**
+     * 战后简报：服务端规则要点 + 可选 LLM 叙事（application.properties 中 combat.debrief.llm.enabled）。
+     */
+    @PostMapping("/debrief")
+    public DebriefResponse debrief(@RequestBody(required = false) DebriefRequest body) {
+        return debriefService.generate(body);
+    }
+
+    /**
+     * 阶段 C 收尾：采纳 AI 推荐策略，调用 AiAutoModelingService 将 planJson 转化为活动、规则并落库。
+     */
+    @PostMapping("/strategy/adopt")
+    public AdoptStrategyResponse adoptStrategy(@RequestBody AdoptStrategyRequest req) {
+        if (req == null || req.getPlanJson() == null || req.getPlanJson().isBlank()) {
+            AdoptStrategyResponse err = new AdoptStrategyResponse();
+            err.setSuccess(false);
+            err.setMessage("缺少 planJson");
+            return err;
+        }
+        return aiAutoModelingService.adoptStrategy(req);
     }
 }
 

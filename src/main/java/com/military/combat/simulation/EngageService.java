@@ -56,7 +56,8 @@ public class EngageService {
         TargetSnapshot target = targetService.getTargetSnapshot();
         int planned = Math.max(0, target.getFireSolutionCount());
         List<InteractionEvent> all = interactionEventRepository.findAll();
-        int roundView = scenarioService.getCurrentRound() + 1;
+        // InteractionEvent.round 与 CombatEngine 内 ctx.currentRound+1 一致，即「本回合结束时」的 getCurrentRound() 值（非 +1 再偏移）
+        int roundView = scenarioService.getCurrentRound();
         List<InteractionEvent> currentRound = all.stream()
                 .filter(e -> e != null && e.getRound() == roundView)
                 .toList();

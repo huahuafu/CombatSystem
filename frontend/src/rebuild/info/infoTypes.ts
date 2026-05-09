@@ -85,6 +85,17 @@ export interface KillChainInfoFactors {
   assess: number;
 }
 
+/** 单回合战场战力快照（传统战报维度，与探测/链路等无关） */
+export interface BattleRoundSummary {
+  /** 红方存活单位战力合计（仅统计 combatPower 大于 0） */
+  redCombatPower: number;
+  blueCombatPower: number;
+  redAlive: number;
+  blueAlive: number;
+  /** 红方战力占双方合计之比 0–1，便于与信息曲线同轴对照 */
+  redShare01: number;
+}
+
 export interface RoundInfoDigest {
   round: number;
   timestamp: number;
@@ -96,6 +107,22 @@ export interface RoundInfoDigest {
   infoAdvantage: number;
   jammingZones: JammingZone[];
   datalinkEdges: DatalinkEdge[];
+  /** 兵力战力汇总；旧会话存档可能缺省，复盘时需兜底 */
+  battle?: BattleRoundSummary;
+  /** 后端回合统计与交互事件计数；旧存档可缺省 */
+  roundStatSnapshot?: RoundStatSnapshot;
+}
+
+/** 后端 RoundStat + 与本 digest 回合对齐的交互事件条数 */
+export interface RoundStatSnapshot {
+  /** 与后端 RoundStat.round 一致；无匹配时为 -1 */
+  statRound: number;
+  redTotalHp: number;
+  blueTotalHp: number;
+  redCount: number;
+  blueCount: number;
+  /** 满足 event.round === digest.round 的交互条数 */
+  interactionEventCount: number;
 }
 
 export interface InfoReplaySlice {
@@ -104,4 +131,13 @@ export interface InfoReplaySlice {
   jamEventsNote: string;
   datalinkUpRatio: number;
   infoAdvantage: number;
+  /** 指挥视角下「己方」战力占双方合计之比 0–1 */
+  ownCombatShare01: number;
+  redCombatPower: number;
+  blueCombatPower: number;
+  /** RoundStat 折算：己方总血量 / 双方总血量 */
+  serverOwnHpShare01: number;
+  statRedHp: number;
+  statBlueHp: number;
+  interactionCount: number;
 }

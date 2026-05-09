@@ -7,6 +7,7 @@ import type {
   RoundInfoDigest,
   UnitInfoCombatState
 } from "../rebuild/info/infoTypes";
+import { useSimulationStore } from "./simulationStore";
 
 const STORAGE_PREFIX = "combat-info-replay";
 
@@ -21,6 +22,8 @@ export interface InfoStoreState {
   perspective: BattlePerspective;
   /** 指挥视角下是否启用战争迷雾（上帝视角忽略） */
   fogOfWarEnabled: boolean;
+  /** 是否显示“未识别接触”（所有敌方初始以灰色?显示，直到被FIND探测后才显示真实图标）—— 适合演示未知海域 */
+  showUnidentifiedContacts: boolean;
   environment: EnvironmentState;
   /** 按单位 id 存储信息作战开关 */
   unitInfoCombat: Record<string, UnitInfoCombatState>;
@@ -35,6 +38,7 @@ export interface InfoStoreState {
 
   setPerspective: (p: BattlePerspective) => void;
   setFogOfWarEnabled: (v: boolean) => void;
+  setShowUnidentifiedContacts: (v: boolean) => void;
   setEnvironment: (partial: Partial<EnvironmentState>) => void;
   setUnitInfoCombat: (unitId: string, partial: Partial<UnitInfoCombatState>) => void;
   ensureUnitsHaveDefaults: (unitIds: string[]) => void;
@@ -55,6 +59,7 @@ const defaultEnv: EnvironmentState = { seaState: 3, weatherAttenuation: 0.92 };
 export const useInfoStore = create<InfoStoreState>((set, get) => ({
   perspective: "COMMAND",
   fogOfWarEnabled: true,
+  showUnidentifiedContacts: false,
   environment: { ...defaultEnv },
   unitInfoCombat: {},
   ghostEnemyUntil: {},
@@ -64,6 +69,7 @@ export const useInfoStore = create<InfoStoreState>((set, get) => ({
 
   setPerspective: (p) => set({ perspective: p }),
   setFogOfWarEnabled: (v) => set({ fogOfWarEnabled: v }),
+  setShowUnidentifiedContacts: (v) => set({ showUnidentifiedContacts: v }),
   setEnvironment: (partial) =>
     set((s) => ({
       environment: {
@@ -168,13 +174,32 @@ export const useInfoStore = create<InfoStoreState>((set, get) => ({
   },
 
   getReplaySlices: () => {
-    return get().roundArchive.map((r) => ({
-      round: r.round,
-      detectionCount: r.detections.length,
-      jamEventsNote: `探测效率×${r.ewSummary.avgDetectionEfficiency.toFixed(2)} · 干扰压制圈内单位 ${r.ewSummary.unitsInEnemyJam}`,
-      datalinkUpRatio: r.datalinkIntegrity,
-      infoAdvantage: r.infoAdvantage
-    }));
+    const side = useSimulationStore.getState().commanderSide;
+    return get().roundArchive.map((r) => {
+      const b = r.battle;
+      const red = b?.redCombatPower ?? 0;
+      const blue = b?.blueCombatPower ?? 0;
+      const sum = red + blue;
+      const ownCombatShare01 = sum <= 0 ? 0.5 : side === "RED" ? red / sum : blue / sum;
+      const rs = r.roundStatSnapshot;
+      const hpSum = (rs?.redTotalHp ?? 0) + (rs?.blueTotalHp ?? 0);
+      const serverOwnHpShare01 =
+        rs && hpSum > 0 ? (side === "RED" ? rs.redTotalHp / hpSum : rs.blueTotalHp / hpSum) : 0.5;
+      return {
+        round: r.round,
+        detectionCount: r.detections.length,
+        jamEventsNote: `探测效率×${r.ewSummary.avgDetectionEfficiency.toFixed(2)} · 干扰压制圈内单位 ${r.ewSummary.unitsInEnemyJam}`,
+        datalinkUpRatio: r.datalinkIntegrity,
+        infoAdvantage: r.infoAdvantage,
+        ownCombatShare01,
+        redCombatPower: red,
+        blueCombatPower: blue,
+        serverOwnHpShare01,
+        statRedHp: rs?.redTotalHp ?? 0,
+        statBlueHp: rs?.blueTotalHp ?? 0,
+        interactionCount: rs?.interactionEventCount ?? 0
+      } satisfies InfoReplaySlice;
+    });
   },
 
   resetInfoModule: () => {
@@ -182,6 +207,7 @@ export const useInfoStore = create<InfoStoreState>((set, get) => ({
     set({
       perspective: "COMMAND",
       fogOfWarEnabled: true,
+      showUnidentifiedContacts: false,
       environment: { ...defaultEnv },
       unitInfoCombat: {},
       ghostEnemyUntil: {},

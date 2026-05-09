@@ -15,8 +15,22 @@ function stageVisual({ def, snapshot, alertCount, runningPath, currentPhaseKey }
     return { tone: "err", label: "异常", color: "error", icon: WarningOutlined };
   }
   const lv = String(snapshot?.readinessLevel || "").toUpperCase();
-  if (lv === "HIGH" || snapshot?.status === "COMPLETE" || snapshot?.phaseStatus === "DONE") {
-    return { tone: "ok", label: "已完成", color: "success", icon: CheckCircleOutlined };
+  /** Assess 快照常有 MEDIUM：不应只认 HIGH 才算「已产出」 */
+  const assessSnapshotReady =
+    def.key === "assess" &&
+    snapshot &&
+    (lv === "HIGH" ||
+      lv === "MEDIUM" ||
+      (typeof snapshot.loopClosureRate === "number" && !Number.isNaN(snapshot.loopClosureRate)));
+  if (
+    lv === "HIGH" ||
+    assessSnapshotReady ||
+    snapshot?.status === "COMPLETE" ||
+    snapshot?.phaseStatus === "DONE"
+  ) {
+    const okLabel =
+      def.key === "assess" && lv !== "HIGH" && assessSnapshotReady ? "已产出" : "已完成";
+    return { tone: "ok", label: okLabel, color: "success", icon: CheckCircleOutlined };
   }
   if (currentPhaseKey === def.key) {
     return { tone: "active", label: "当前阶段", color: "processing", icon: ClockCircleOutlined };
@@ -29,7 +43,8 @@ export default function KillChainStagePanel({
   snapshots,
   stageAlertCount,
   stageRunningPath,
-  roundTrail = []
+  roundTrail = [],
+  onStageClick
 }) {
   const phase = String(state?.operationalPhase || "").toLowerCase();
 
@@ -86,7 +101,12 @@ export default function KillChainStagePanel({
                 </div>
               }
             >
-              <div className={`kill-chain-cell kill-chain-cell--${vis.tone}`}>
+              <div
+                className={`kill-chain-cell kill-chain-cell--${vis.tone} ${phase === def.key ? "kill-chain-cell--current" : ""}`}
+                onClick={() => onStageClick && onStageClick(def.key)}
+                style={{ cursor: onStageClick ? "pointer" : "default" }}
+                title={onStageClick ? "点击推进杀伤链（执行当前/下一阶段）" : undefined}
+              >
                 <div className="kill-chain-cell-head">
                   <span className="kill-chain-en">{def.en}</span>
                   <Tag color={vis.color} icon={vis.label === "进行中" ? <LoadingOutlined spin /> : <Icon />}>

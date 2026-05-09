@@ -21,6 +21,8 @@ import com.military.combat.simulation.batch.BatchSimulationResponse;
 import com.military.combat.simulation.hybrid.HybridStrategyCandidate;
 import com.military.combat.simulation.hybrid.HybridStrategyOptimizeRequest;
 import com.military.combat.simulation.hybrid.HybridStrategyOptimizeResponse;
+import com.military.combat.simulation.hybrid.AdoptStrategyRequest;
+import com.military.combat.simulation.hybrid.AdoptStrategyResponse;
 import com.military.combat.simulation.hybrid.HybridStrategyRecommendRequest;
 import com.military.combat.simulation.hybrid.HybridStrategyRecommendResponse;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -67,6 +69,19 @@ public class AiAutoModelingService {
 
     private final ObjectMapper mapper = new ObjectMapper();
 
+    /** 计划落库日志：{@link AiAutoModelResult#getActions()} 或 {@link AdoptStrategyResponse} 中对应列表。 */
+    private static void appendPlanLog(Object out, String message, boolean interactionRule) {
+        if (out instanceof AiAutoModelResult auto) {
+            auto.getActions().add(message);
+        } else if (out instanceof AdoptStrategyResponse adopt) {
+            if (interactionRule) {
+                adopt.getCreatedRules().add(message);
+            } else {
+                adopt.getCreatedActivities().add(message);
+            }
+        }
+    }
+
     public AiAutoModelResult autoModelAndSimulate(AiAutoModelRequest req) {
         AiAutoModelResult out = new AiAutoModelResult();
         out.setDryRun(false);
@@ -98,10 +113,10 @@ public class AiAutoModelingService {
 
         if (req != null && req.isReplaceAiArtifacts()) {
             String sid = out.getScenarioId();
-            int na = combatActivityService.deleteActivitiesWithNamePrefixForScenario(sid, "[AI]");
-            int nr = interactionRuleService.deleteRulesWithNamePrefixForScenario(sid, "[AI]");
-            out.getActions().add(String.format("已清理旧 AI 条目（名称前缀 [AI]）：作战活动 %d 条、交互规则 %d 条。", na, nr));
-        }
+        int na = combatActivityService.deleteActivitiesWithNamePrefixForScenario(sid, "[AI]");
+        int nr = interactionRuleService.deleteRulesWithNamePrefixForScenario(sid, "[AI]");
+        out.getActions().add(String.format("已清理旧 AI 条目（名称前缀 [AI]）：作战活动 %d 条、交互规则 %d 条。", na, nr));
+    }
 
         deployGroups(plan, out);
         createActivitiesFromPlan(plan, out);
@@ -284,12 +299,12 @@ public class AiAutoModelingService {
         }
     }
 
-    private void createCommands(JsonNode plan, AiAutoModelResult out) {
+    private void createCommands(JsonNode plan, Object out) {
         JsonNode commands = plan.path("commands");
         if (!commands.isArray() || commands.isEmpty()) return;
         String commander = pickCommanderUnitId();
         if (commander == null) {
-            out.getActions().add("未找到指挥节点，跳过命令创建。");
+            appendPlanLog(out, "未找到指挥节点，跳过命令创建。", false);
             return;
         }
         for (JsonNode c : commands) {
@@ -298,18 +313,18 @@ public class AiAutoModelingService {
             order.setOrderType(c.path("orderType").asText("ISR"));
             order.setObjective(c.path("objective").asText("联合态势构建"));
             commandChainService.createOrder(order);
-            out.getActions().add("创建命令 " + order.getOrderType());
+            appendPlanLog(out, "创建命令 " + order.getOrderType(), false);
         }
     }
 
-    private void createSorties(JsonNode plan, AiAutoModelResult out) {
+    private void createSorties(JsonNode plan, Object out) {
         JsonNode sorties = plan.path("sorties");
         if (!sorties.isArray() || sorties.isEmpty()) return;
         List<CombatUnit> candidates = combatUnitService.getUnitsForBattleEngine().stream()
                 .filter(u -> u != null && u.getType() != null && List.of("RECON_AIRCRAFT","JAMMER_AIRCRAFT","NAVAL_BOMBER","AEW_AIRCRAFT","UAV_RECON","ARMY_AVIATION","FIGHTER","BOMBER").contains(u.getType()))
                 .toList();
         if (candidates.isEmpty()) {
-            out.getActions().add("无可用航空平台，跳过架次创建。");
+            appendPlanLog(out, "无可用航空平台，跳过架次创建。", false);
             return;
         }
         int idx = 0;
@@ -322,12 +337,12 @@ public class AiAutoModelingService {
             mission.setMissionName("AI-" + mission.getMissionType() + "-" + System.currentTimeMillis());
             mission.setObjective(s.path("objective").asText("关键空域态势保障"));
             sortieMissionService.createMission(mission);
-            out.getActions().add("创建架次 " + mission.getMissionType() + " -> " + u.getName());
+            appendPlanLog(out, "创建架次 " + mission.getMissionType() + " -> " + u.getName(), false);
             idx++;
         }
     }
 
-    private void createOpposing(JsonNode plan, AiAutoModelResult out) {
+    private void createOpposing(JsonNode plan, Object out) {
         JsonNode opps = plan.path("opposingActions");
         if (!opps.isArray() || opps.isEmpty()) return;
         for (JsonNode n : opps) {
@@ -337,7 +352,7 @@ public class AiAutoModelingService {
             a.setTargetDomain("AIR");
             a.setObjective("压制对手杀伤链");
             opposingActionService.create(a);
-            out.getActions().add("创建对抗动作 " + a.getActionType() + " 强度 " + a.getIntensity());
+            appendPlanLog(out, "创建对抗动作 " + a.getActionType() + " 强度 " + a.getIntensity(), false);
         }
     }
 
@@ -474,7 +489,7 @@ public class AiAutoModelingService {
         return ctx;
     }
 
-    private void createActivitiesFromPlan(JsonNode plan, AiAutoModelResult out) {
+    private void createActivitiesFromPlan(JsonNode plan, Object out) {
         JsonNode arr = plan.path("activities");
         if (!arr.isArray() || arr.size() == 0) {
             return;
@@ -508,7 +523,7 @@ public class AiAutoModelingService {
                 String sidePick = pu.path("side").asText(act.getSide());
                 List<String> uids = pickUnitIdsBySide(all, sidePick, maxU);
                 if (uids.isEmpty()) {
-                    out.getActions().add("作战活动跳过（无可用单位）：" + act.getName());
+                    appendPlanLog(out, "作战活动跳过（无可用单位）：" + act.getName(), false);
                     continue;
                 }
                 act.setUnitIds(uids);
@@ -565,14 +580,14 @@ public class AiAutoModelingService {
                 act.setSteps(stepList);
 
                 combatActivityService.createActivity(act);
-                out.getActions().add("创建作战活动：" + act.getName());
+                appendPlanLog(out, "创建作战活动：" + act.getName(), false);
             } catch (Exception ex) {
-                out.getActions().add("作战活动创建失败：" + ex.getMessage());
+                appendPlanLog(out, "作战活动创建失败：" + ex.getMessage(), false);
             }
         }
     }
 
-    private void createInteractionRulesFromPlan(JsonNode plan, AiAutoModelResult out) {
+    private void createInteractionRulesFromPlan(JsonNode plan, Object out) {
         JsonNode arr = plan.path("interactionRules");
         if (!arr.isArray() || arr.size() == 0) {
             return;
@@ -599,9 +614,9 @@ public class AiAutoModelingService {
                 rule.setPriority(Math.max(0, r.path("priority").asInt(10)));
 
                 interactionRuleService.addInteractionRule(rule);
-                out.getActions().add("创建交互规则：" + rule.getName());
+                appendPlanLog(out, "创建交互规则：" + rule.getName(), true);
             } catch (Exception ex) {
-                out.getActions().add("交互规则创建失败：" + ex.getMessage());
+                appendPlanLog(out, "交互规则创建失败：" + ex.getMessage(), true);
             }
         }
     }
@@ -698,6 +713,53 @@ public class AiAutoModelingService {
             out.getStrategies().add(defaultFallbackCandidate(i));
         }
         return out;
+    }
+
+    /**
+     * 阶段 C 收尾：采纳前端选中的 AI 策略 planJson，转化为活动、规则、命令等并落库。
+     */
+    public AdoptStrategyResponse adoptStrategy(AdoptStrategyRequest req) {
+        AdoptStrategyResponse resp = new AdoptStrategyResponse();
+        String sid = req.getScenarioId() != null && !req.getScenarioId().isEmpty()
+                ? req.getScenarioId()
+                : scenarioService.getActiveScenarioId();
+        resp.setScenarioId(sid);
+        resp.setAdoptedStrategyId(req.getStrategyId());
+        resp.setAdoptedStrategyName(req.getStrategyName());
+
+        if (sid == null || sid.isEmpty()) {
+            resp.setSuccess(false);
+            resp.setMessage("未激活想定，无法采纳策略");
+            return resp;
+        }
+
+        try {
+            // 清理旧 AI 条目
+            int na = combatActivityService.deleteActivitiesWithNamePrefixForScenario(sid, "[AI]");
+            int nr = interactionRuleService.deleteRulesWithNamePrefixForScenario(sid, "[AI]");
+            resp.getCreatedActivities().add("清理旧 AI 条目：活动 " + na + " 条，规则 " + nr + " 条。");
+
+            JsonNode plan = parsePlan(req.getPlanJson());
+            if (plan == null) {
+                resp.setSuccess(false);
+                resp.setMessage("planJson 解析失败");
+                return resp;
+            }
+
+            // 核心落库
+            createActivitiesFromPlan(plan, resp);  // 复用已有逻辑（需适配 AdoptStrategyResponse）
+            createInteractionRulesFromPlan(plan, resp);
+            createCommands(plan, resp);  // 需扩展支持 AdoptStrategyResponse
+            createSorties(plan, resp);
+            createOpposing(plan, resp);
+
+            resp.setMessage("已成功采纳策略「" + req.getStrategyName() + "」，活动与规则已落库。可继续推进杀伤链。");
+            resp.setSuccess(true);
+        } catch (Exception e) {
+            resp.setSuccess(false);
+            resp.setMessage("采纳失败：" + e.getMessage());
+        }
+        return resp;
     }
 
     private HybridStrategyCandidate defaultFallbackCandidate(int idx) {

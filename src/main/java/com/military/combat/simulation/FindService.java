@@ -8,6 +8,7 @@ import com.military.combat.repository.FindContactReportRepository;
 import com.military.combat.service.CombatUnitService;
 import com.military.combat.service.ScenarioService;
 import com.military.combat.service.TerrainService;
+import com.military.combat.util.GeoUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -30,6 +31,12 @@ public class FindService {
     private static final double ID_ACC_STANDARD = 0.95;
     private static final double REPORTING_LATENCY_STANDARD = 60.0;
     private static final double UPDATE_INTERVAL_STANDARD = 10.0;
+
+    /**
+     * 红蓝异侧平台之间：距离大于该值则无法形成对真实目标的稳定探测（仍可有虚警等杂波逻辑）。
+     * 与想定初距（数百公里级）配合，使开局可处于「未发现」状态，随机动接近后进入发现阶段。
+     */
+    private static final double MAX_CROSS_SIDE_TARGET_DETECTION_RANGE_METERS = 320_000.0;
 
     @Autowired
     private ScenarioService scenarioService;
@@ -73,7 +80,7 @@ public class FindService {
 
         List<FindContactReport> out = new ArrayList<>();
         for (CombatUnit unit : units) {
-            FindContactReport report = maybeDetectTarget(sid, round, unit);
+            FindContactReport report = maybeDetectTarget(sid, round, unit, units);
             if (report != null) {
                 out.add(reportRepository.save(report));
             }
@@ -147,13 +154,55 @@ public class FindService {
         return snapshot;
     }
 
-    private FindContactReport maybeDetectTarget(String sid, int round, CombatUnit unit) {
+    private FindContactReport maybeDetectTarget(String sid, int round, CombatUnit unit, List<CombatUnit> allUnits) {
+        if (unit != null && !hasEnemyWithinSensorReach(unit, allUnits)) {
+            return null;
+        }
         double pd = estimateDetectionProbability(unit);
         SplittableRandom rng = simulationRandom.rng("FIND_DETECT", round, unit == null ? null : unit.getId());
         if (rng.nextDouble() > pd) {
             return null;
         }
         return buildContact(sid, round, unit, false);
+    }
+
+    /**
+     * 若目标单位与任意异侧存活单位的最小距离超出探测包络，则不生成对该真实目标的接触。
+     */
+    private boolean hasEnemyWithinSensorReach(CombatUnit target, List<CombatUnit> allUnits) {
+        if (target == null || allUnits == null || allUnits.isEmpty()) {
+            return true;
+        }
+        if (target.getLatitude() == null || target.getLongitude() == null) {
+            return true;
+        }
+        String ts = target.getSide();
+        if (ts == null || ts.isEmpty()) {
+            return true;
+        }
+        double best = Double.MAX_VALUE;
+        for (CombatUnit o : allUnits) {
+            if (o == null || o.getCombatPower() <= 0) {
+                continue;
+            }
+            if (target.getId() != null && target.getId().equals(o.getId())) {
+                continue;
+            }
+            if (ts.equals(o.getSide())) {
+                continue;
+            }
+            if (o.getLatitude() == null || o.getLongitude() == null) {
+                continue;
+            }
+            double d = GeoUtils.calculateDistance(
+                    target.getLatitude(), target.getLongitude(),
+                    o.getLatitude(), o.getLongitude());
+            best = Math.min(best, d);
+        }
+        if (best >= Double.MAX_VALUE / 2) {
+            return true;
+        }
+        return best <= MAX_CROSS_SIDE_TARGET_DETECTION_RANGE_METERS;
     }
 
     private FindContactReport buildContact(String sid, int round, CombatUnit unit, boolean falseAlarm) {

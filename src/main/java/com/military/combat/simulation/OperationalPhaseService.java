@@ -60,12 +60,13 @@ public class OperationalPhaseService {
         } else if (target.getFireSolutionCount() <= 0 || target.getAssignmentCoverageRate() < 0.45) {
             phase = KillChainPhase.TARGET;
             reason = "火力解准备不足，优先完成目标分配与武器匹配。";
-        } else if (engage.getExecutedStrikeCount() <= 0 || engage.getFireExecutionRate() < 0.45) {
+        } else if (engage.getExecutedStrikeCount() <= 0) {
+            // 尚无持久化交战记录时仍以交战为主导；一旦有交战事件即转入评估（不再卡 0.45 兑现率阈值）
             phase = KillChainPhase.ENGAGE;
-            reason = "交战兑现率偏低，优先组织火力打击。";
+            reason = "尚未记录交战事件，优先组织火力打击。";
         } else {
             phase = KillChainPhase.ASSESS;
-            reason = "已具备交战成果，进入战果评估与闭环修正。"
+            reason = "已具备交战记录，进入战果评估与闭环修正。"
                     + " 当前闭环完成度 " + (int) Math.round(assess.getLoopClosureRate() * 100) + "%。";
         }
 

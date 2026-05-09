@@ -111,9 +111,65 @@ public class CombatEngineService {
         return ctx.events;
     }
 
+    /**
+     * 杀伤链单片段执行（0=FIND … 5=ASSESS）。仅在片段 5（ASSESS）结束时递增推演回合数。
+     */
+    public List<BattleEvent> simulateKillChainSegment(int segmentIndex) {
+        if (scenarioService.getWinner() != null && !scenarioService.getWinner().isEmpty()) {
+            BattleEvent endEvent = new BattleEvent();
+            endEvent.setSource("SYSTEM");
+            endEvent.setTarget("SYSTEM");
+            endEvent.setAction("SIMULATION_ALREADY_DECIDED");
+            endEvent.setSide("SYSTEM");
+            endEvent.setMessage("推演已决出胜负：" + scenarioService.getWinner() + "（" + scenarioService.getWinReason() + "）");
+            return List.of(endEvent);
+        }
+        if (segmentIndex < 0 || segmentIndex > 5) {
+            throw new IllegalArgumentException("segmentIndex 必须为 0..5（FIND→ASSESS）");
+        }
+        List<CombatUnit> activeUnits = unitService.getUnitsForBattleEngine().stream()
+                .filter(u -> u.getCombatPower() > 0)
+                .collect(Collectors.toList());
+        TurnContext ctx = new TurnContext(scenarioService.getCurrentRound(), activeUnits);
+        switch (segmentIndex) {
+            case 0:
+                runKillChainSegmentFind(ctx);
+                break;
+            case 1:
+                runKillChainSegmentFix(ctx);
+                break;
+            case 2:
+                runKillChainSegmentTrack(ctx);
+                break;
+            case 3:
+                runKillChainSegmentTarget(ctx);
+                break;
+            case 4:
+                runKillChainSegmentEngage(ctx);
+                break;
+            case 5:
+                runKillChainSegmentAssess(ctx);
+                break;
+            default:
+                break;
+        }
+        if (segmentIndex == 5) {
+            scenarioService.setCurrentRound(ctx.currentRound + 1);
+        }
+        return ctx.events;
+    }
+
     private void runTurnPipeline(TurnContext ctx) {
+        runKillChainSegmentFind(ctx);
+        runKillChainSegmentFix(ctx);
+        runKillChainSegmentTrack(ctx);
+        runKillChainSegmentTarget(ctx);
+        runKillChainSegmentEngage(ctx);
+        runKillChainSegmentAssess(ctx);
+    }
+
+    private void runKillChainSegmentFind(TurnContext ctx) {
         announceKillChainDoctrine(ctx);
-        // 以六阶段作战链条驱动回合执行（而非仅前端看板展示）
         announcePhaseStart(ctx, "FIND", "发现");
         // 先推进对抗/指挥/架次状态，再进入六环节评估，避免“评估滞后一个回合”
         stageOpposingExecution(ctx);
@@ -121,25 +177,34 @@ public class CombatEngineService {
         stageSortieExecution(ctx);
         stageNavalCommandExecution(ctx);
         stageFindExecution(ctx);
+    }
 
+    private void runKillChainSegmentFix(TurnContext ctx) {
         announcePhaseStart(ctx, "FIX", "定位");
         stageFixExecution(ctx);
+    }
 
+    private void runKillChainSegmentTrack(TurnContext ctx) {
         announcePhaseStart(ctx, "TRACK", "跟踪");
         stageTrackExecution(ctx);
+    }
 
+    private void runKillChainSegmentTarget(TurnContext ctx) {
         announcePhaseStart(ctx, "TARGET", "瞄准");
         stageTargetExecution(ctx);
+    }
 
+    private void runKillChainSegmentEngage(TurnContext ctx) {
         stageCampaignCheck(ctx);
         stageActivityExecution(ctx);
         stageCoordinationExecution(ctx);
         stageInteractionProcess(ctx);
         stageAutonomousCombat(ctx);
-
-        // 交战与评估必须放在战斗执行之后，保证读取到本回合最新战果
         announcePhaseStart(ctx, "ENGAGE", "交战");
         stageEngageExecution(ctx);
+    }
+
+    private void runKillChainSegmentAssess(TurnContext ctx) {
         announcePhaseStart(ctx, "ASSESS", "评估");
         stageAssessExecution(ctx);
         stageVictoryCheck(ctx);

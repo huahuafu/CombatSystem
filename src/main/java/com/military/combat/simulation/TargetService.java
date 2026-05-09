@@ -71,6 +71,11 @@ public class TargetService {
                 .collect(Collectors.toList());
         int assigned = (int) attackActivities.stream().filter(a -> a.getObjectiveId() != null && !a.getObjectiveId().isEmpty()).count();
         int fireSolution = (int) attackActivities.stream().filter(this::hasFireSolution).count();
+        // 未配置打击类作战活动时（自由对抗 / 演示想定）：用跟踪目标数作为最小火力解与分配占位，避免杀伤链阶段永远卡在 TARGET
+        if (attackActivities.isEmpty() && tracked > 0) {
+            fireSolution = Math.max(fireSolution, tracked);
+            assigned = Math.max(assigned, tracked);
+        }
         double assignmentCoverage = tracked <= 0 ? 0 : (double) Math.min(tracked, assigned) / tracked;
         double weaponMatch = computeWeaponMatch();
         double ttf = estimateTimeToFireSeconds(attackActivities, weaponMatch);

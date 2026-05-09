@@ -264,6 +264,15 @@ public class CommanderService {
         return commanderRunRepository.findById(requestId).orElse(null);
     }
 
+    /**
+     * 清空 commander_runs 集合（运行回放列表），返回删除前文档条数。
+     */
+    public long purgeAllCommanderRuns() {
+        long n = commanderRunRepository.count();
+        commanderRunRepository.deleteAll();
+        return n;
+    }
+
     public List<CommanderRunRecord> listRecentRuns(String scenarioId, int limit) {
         int lim = clamp(limit, 1, 100);
         if (scenarioId == null || scenarioId.isEmpty()) {

@@ -15,6 +15,12 @@ public class KillChainRunResult {
     private int round;
     private List<String> executedPhases = new ArrayList<>();
 
+    /** 单次「逐步推进」时实际执行的片段（与 executedPhases 单元素对应）。整回合一键推进时可留空。 */
+    private String executedPhase;
+
+    /** 下一次逐步推进应从哪一片段开始（0..5）。仅逐步 API 使用。 */
+    private int nextSequentialStep;
+
     private int findContacts;
     private int fixTargets;
     private int trackTargets;

@@ -409,6 +409,12 @@ button:disabled {
 .ant-btn-dangerous.ant-btn-primary {
   background: #dc2626 !important;
   border-color: #991b1b !important;
+  color: #fff !important;
+  font-weight: 600;
+  /* 醒目红色 + 白色文字 + 更大可点击区域（不改变其他按钮尺寸） */
+  padding: 6px 14px !important;
+  min-height: 32px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 .ant-btn:hover,

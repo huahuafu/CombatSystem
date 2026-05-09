@@ -16,6 +16,7 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 @Service
@@ -45,6 +46,27 @@ public class ScenarioService {
      */
     private Long simulationSeed;
 
+    /**
+     * 杀伤链逐步推演：下一次「推进」应执行的片段（0=FIND … 5=ASSESS）。
+     * 完成 ASSESS 后由服务归零或递增，与 {@link #getCurrentRound()} 不同步（一整回合含 6 次片段推进）。
+     */
+    private int killChainSequentialStep = 0;
+
+    public int getKillChainSequentialStep() {
+        return killChainSequentialStep;
+    }
+
+    public void setKillChainSequentialStep(int killChainSequentialStep) {
+        if (killChainSequentialStep < 0 || killChainSequentialStep > 5) {
+            throw new IllegalArgumentException("killChainSequentialStep must be in [0,5]");
+        }
+        this.killChainSequentialStep = killChainSequentialStep;
+    }
+
+    public void resetKillChainSequentialStep() {
+        this.killChainSequentialStep = 0;
+    }
+
     public int getCurrentRound() {
         return currentRound;
     }
@@ -66,6 +88,9 @@ public class ScenarioService {
     }
 
     public void setActiveScenarioId(String activeScenarioId) {
+        if (!Objects.equals(this.activeScenarioId, activeScenarioId)) {
+            this.killChainSequentialStep = 0;
+        }
         this.activeScenarioId = activeScenarioId;
         if (activeScenarioId == null || activeScenarioId.isEmpty()) {
             this.winner = null;
@@ -325,6 +350,7 @@ public class ScenarioService {
         currentRound = 0;
         winner = null;
         winReason = null;
+        killChainSequentialStep = 0;
     }
 
     /**

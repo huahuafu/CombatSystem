@@ -51,4 +51,9 @@ public class SimulationState {
 
     /** 当前判胜原因。 */
     private String winReason;
+
+    /**
+     * 杀伤链逐步模式下，下一次「推进」对应的片段序号（0=FIND … 5=ASSESS）。
+     */
+    private int killChainSequentialStep;
 }

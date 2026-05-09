@@ -1,6 +1,7 @@
 import type { DeployedUnit, ForceCamp } from "../force/forceTypes";
 import { bearingDeg, distanceNm } from "./infoGeometry";
 import type {
+  BattleRoundSummary,
   DatalinkEdge,
   DetectionHit,
   EnvironmentState,
@@ -270,6 +271,36 @@ export function datalinkIntegrity(edges: DatalinkEdge[]): number {
   return Math.max(0, Math.min(1, s / edges.length));
 }
 
+/** 从当前兵力列表汇总双方战力（传统战报层，用于与信息维度同轴复盘） */
+export function summarizeBattleForRound(units: DeployedUnit[]): BattleRoundSummary {
+  let redCombatPower = 0;
+  let blueCombatPower = 0;
+  let redAlive = 0;
+  let blueAlive = 0;
+  for (const u of units) {
+    const p = typeof u.combatPower === "number" && !Number.isNaN(u.combatPower) ? u.combatPower : 0;
+    if (p <= 0) {
+      continue;
+    }
+    if (u.side === "RED") {
+      redCombatPower += p;
+      redAlive += 1;
+    } else if (u.side === "BLUE") {
+      blueCombatPower += p;
+      blueAlive += 1;
+    }
+  }
+  const total = redCombatPower + blueCombatPower;
+  const redShare01 = total > 0 ? redCombatPower / total : 0.5;
+  return {
+    redCombatPower,
+    blueCombatPower,
+    redAlive,
+    blueAlive,
+    redShare01
+  };
+}
+
 export function computeInfoAdvantage(
   ownSide: ForceCamp,
   units: DeployedUnit[],
@@ -315,6 +346,7 @@ export function buildRoundDigest(
   const ewSummary = summarizeEw(ownSide, units, jammingZones);
   const dl = datalinkIntegrity(datalinkEdges);
   const infoAdvantage = computeInfoAdvantage(ownSide, units, detections, enemyDetections, dl);
+  const battle = summarizeBattleForRound(units);
   return {
     round,
     timestamp: Date.now(),
@@ -323,6 +355,7 @@ export function buildRoundDigest(
     datalinkIntegrity: dl,
     infoAdvantage,
     jammingZones,
-    datalinkEdges
+    datalinkEdges,
+    battle
   };
 }

@@ -14,6 +14,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -53,8 +54,23 @@ public class CommanderController {
     public CommanderExecuteResponse replay(@PathVariable String requestId,
                                            @RequestBody(required = false) CommanderReplayRequest body) {
         CommanderRunRecord rec = commanderService.getRun(requestId);
+        if (rec == null) {
+            throw new IllegalArgumentException("run 记录不存在: " + requestId);
+        }
         CommanderReplayRequest b = body == null ? new CommanderReplayRequest() : body;
         return commanderService.replayFromRecord(rec, b.getRounds(), b.getSeed(), b.isPersist());
+    }
+
+    /**
+     * 删除全部指挥官运行记录（Mongo {@code commander_runs}），用于清理「运行回放」列表中的旧数据。
+     */
+    @DeleteMapping("/runs")
+    public Map<String, Object> purgeAllRuns() {
+        long n = commanderService.purgeAllCommanderRuns();
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("purgedCount", n);
+        out.put("message", "已清空运行列表");
+        return out;
     }
 
     /**

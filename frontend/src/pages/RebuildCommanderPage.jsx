@@ -593,7 +593,7 @@ export default function RebuildCommanderPage() {
                   </div>
                 </Card>
 
-                <Card size="small" title="作战目标" className="commander-panel-card">
+                <Card size="small" title="任务意图 / 作战企图" className="commander-panel-card">
                   <Space direction="vertical" style={{ width: "100%" }}>
                     <Select
                       style={{ width: "100%" }}
@@ -602,7 +602,7 @@ export default function RebuildCommanderPage() {
                       options={goalTemplates.map((x) => ({ label: x.label, value: x.value }))}
                     />
                     <Input.TextArea value={goal} onChange={(e) => { setGoalTemplate("CUSTOM"); setGoal(e.target.value); }} rows={2} />
-                    <Tag color="blue">当前：{goal}</Tag>
+                    <Tag color="blue">当前意图：{goal}</Tag>
                   </Space>
                 </Card>
               </div>

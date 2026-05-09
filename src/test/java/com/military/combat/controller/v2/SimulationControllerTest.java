@@ -4,8 +4,9 @@ import com.military.combat.battleline.BattlelineOverview;
 import com.military.combat.battleline.BattlelineService;
 import com.military.combat.entity.BattleEvent;
 import com.military.combat.entity.CombatUnit;
-import com.military.combat.service.CombatEngineService;
 import com.military.combat.service.CombatUnitService;
+import com.military.combat.simulation.KillChainRunResult;
+import com.military.combat.simulation.KillChainSimulationService;
 import com.military.combat.simulation.SimulationFacadeService;
 import com.military.combat.simulation.SimulationMode;
 import com.military.combat.simulation.SimulationState;
@@ -28,7 +29,7 @@ class SimulationControllerTest {
 
     private MockMvc mockMvc;
 
-    private CombatEngineService combatEngineService;
+    private KillChainSimulationService killChainSimulationService;
 
     private CombatUnitService combatUnitService;
 
@@ -38,12 +39,12 @@ class SimulationControllerTest {
 
     @BeforeEach
     void setUp() {
-        combatEngineService = mock(CombatEngineService.class);
+        killChainSimulationService = mock(KillChainSimulationService.class);
         combatUnitService = mock(CombatUnitService.class);
         simulationFacadeService = mock(SimulationFacadeService.class);
         battlelineService = mock(BattlelineService.class);
         SimulationController controller = new SimulationController();
-        inject(controller, "combatEngineService", combatEngineService);
+        inject(controller, "killChainSimulationService", killChainSimulationService);
         inject(controller, "combatUnitService", combatUnitService);
         inject(controller, "simulationFacadeService", simulationFacadeService);
         inject(controller, "battlelineService", battlelineService);
@@ -60,7 +61,13 @@ class SimulationControllerTest {
                 "desc",
                 "cid-1",
                 "campaign",
-                "mainline");
+                "mainline",
+                null,
+                null,
+                null,
+                null,
+                null,
+                0);
         when(simulationFacadeService.getState()).thenReturn(state);
 
         mockMvc.perform(get("/combat/v2/simulation/state"))
@@ -76,7 +83,9 @@ class SimulationControllerTest {
         event.setAction("ATTACK");
         List<BattleEvent> events = new ArrayList<>();
         events.add(event);
-        when(combatEngineService.simulateRound()).thenReturn(events);
+        KillChainRunResult runResult = new KillChainRunResult();
+        runResult.setBattleEvents(events);
+        when(killChainSimulationService.runOneRoundByKillChain()).thenReturn(runResult);
 
         mockMvc.perform(post("/combat/v2/simulation/start"))
                 .andExpect(status().isOk())
